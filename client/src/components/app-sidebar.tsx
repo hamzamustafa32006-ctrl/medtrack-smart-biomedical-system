@@ -41,12 +41,12 @@ export function AppSidebar() {
                 
                 return (
                   <SidebarMenuItem key={item.path}>
-                    <Link href={item.path}>
-                      <SidebarMenuButton isActive={isActive} data-testid={item.testId}>
+                    <SidebarMenuButton asChild isActive={isActive} data-testid={item.testId}>
+                      <Link href={item.path}>
                         <Icon className="w-5 h-5" />
                         <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </Link>
+                      </Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
