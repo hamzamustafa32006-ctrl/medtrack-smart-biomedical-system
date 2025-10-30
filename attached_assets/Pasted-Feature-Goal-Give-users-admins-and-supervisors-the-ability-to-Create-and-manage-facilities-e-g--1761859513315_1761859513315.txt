@@ -1,0 +1,112 @@
+Feature Goal
+Give users (admins and supervisors) the ability to:
+Create and manage facilities (e.g., hospitals, labs, departments).
+Add locations (e.g., Radiology Room 1, ICU Room 3) inside each facility.
+Assign equipment to those locations.
+Filter all maintenance tasks and alerts by facility or location.
+Hierarchy
+Facility → Locations → Equipment → Maintenance Tasks
+⚙️ 2. Database Layer
+Tables
+CREATE TABLE facilities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  address TEXT,
+  contact_person TEXT,
+  phone TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id UUID REFERENCES facilities(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  floor TEXT,
+  room TEXT,
+  department TEXT,
+  notes TEXT,
+  UNIQUE (facility_id, name)
+);
+
+ALTER TABLE equipment
+  ADD COLUMN facility_id UUID REFERENCES facilities(id),
+  ADD COLUMN location_id UUID REFERENCES locations(id);
+Key Relationships
+One facility → many locations
+One location → many equipment items
+Deleting a facility cascades to its locations
+🧠 3. Backend API Design
+Facility Endpoints
+Method	Endpoint	Description
+GET	/facilities	List all facilities
+POST	/facilities	Create facility
+PATCH	/facilities/:id	Update facility info
+DELETE	/facilities/:id	Delete facility
+GET	/facilities/:id/locations	Get all locations under a facility
+Location Endpoints
+Method	Endpoint	Description
+POST	/facilities/:facility_id/locations	Create location
+PATCH	/locations/:id	Update location
+DELETE	/locations/:id	Delete location
+Example Payloads
+Create Facility
+{
+  "name": "AASU University Hospital",
+  "code": "AASU-MED",
+  "address": "Kuwait City, Block 4",
+  "contact_person": "Eng. Hamza Ismail",
+  "phone": "+965-99999999"
+}
+Create Location
+{
+  "facility_id": "fac-123",
+  "name": "Radiology Dept.",
+  "floor": "1",
+  "room": "B12",
+  "department": "Imaging"
+}
+🧱 4. Frontend Implementation
+a. Facility Management Page
+List all facilities with summary stats (e.g., equipment count, open tasks).
+“Add Facility” button → modal form.
+Edit/Delete actions inline.
+b. Location Management (nested view)
+When viewing a facility, show a Locations tab.
+Table listing all locations.
+“Add Location” button → modal with name, floor, room, department.
+Inline edit/delete buttons.
+c. Equipment Form Integration
+Add two dropdowns in the Equipment creation form:
+<Label>Facility</Label>
+<Select onChange={e => setFacility(e.target.value)}>
+  {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+</Select>
+
+<Label>Location</Label>
+<Select disabled={!facilityId} onChange={e => setLocation(e.target.value)}>
+  {locations.filter(l => l.facility_id === facilityId)
+    .map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+</Select>
+🔐 5. Permissions
+Role	Permissions
+Technician	View only
+Supervisor	Create/Edit locations
+Admin	Full CRUD on facilities and locations
+Enforce permissions server-side and hide “Add” / “Delete” buttons from unauthorized users.
+📊 6. Dashboard Integration
+Add filters across the app:
+Filter equipment list, maintenance tasks, and alerts by facility and location.
+Add facility overview cards (e.g., “AASU Hospital – 35 devices, 4 overdue tasks”).
+🧪 7. Test Cases (must pass)
+✅ Create facility → appears in facility list
+✅ Add locations → displayed correctly under facility
+✅ Edit and delete locations successfully
+✅ Assign equipment to location → persists in DB
+✅ Filter equipment/tasks by facility/location
+✅ Non-admin cannot delete facility
+🚀 8. Next Extension Ideas
+Facility Maps: Display locations visually on a hospital map.
+QR Codes: Generate QR for each location for quick equipment lookup.
+Reporting: Facility-based maintenance reports (completed vs overdue).
+Multi-Facility Access: Limit technicians to their assigned facilities only.
