@@ -7,6 +7,8 @@ import {
   insertEquipmentSchema,
   insertContractSchema,
   insertMaintenanceRecordSchema,
+  insertFacilitySchema,
+  insertLocationSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -145,6 +147,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error creating maintenance record:", error);
       res.status(500).json({ message: "Failed to create maintenance record" });
+    }
+  });
+
+  // ============================================
+  // Facility routes
+  // ============================================
+
+  // Get all facilities for user
+  app.get("/api/facilities", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const facilities = await storage.getFacilities(userId);
+      res.json(facilities);
+    } catch (error) {
+      console.error("Error fetching facilities:", error);
+      res.status(500).json({ message: "Failed to fetch facilities" });
+    }
+  });
+
+  // Get facility by ID
+  app.get("/api/facilities/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const facility = await storage.getFacilityById(id, userId);
+      
+      if (!facility) {
+        return res.status(404).json({ message: "Facility not found" });
+      }
+      
+      res.json(facility);
+    } catch (error) {
+      console.error("Error fetching facility:", error);
+      res.status(500).json({ message: "Failed to fetch facility" });
+    }
+  });
+
+  // Create new facility
+  app.post("/api/facilities", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = insertFacilitySchema.parse(req.body);
+      const facility = await storage.createFacility(data, userId);
+      res.status(201).json(facility);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating facility:", error);
+      res.status(500).json({ message: "Failed to create facility" });
+    }
+  });
+
+  // Update facility
+  app.patch("/api/facilities/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const data = insertFacilitySchema.partial().parse(req.body);
+      const facility = await storage.updateFacility(id, data, userId);
+      
+      if (!facility) {
+        return res.status(404).json({ message: "Facility not found" });
+      }
+      
+      res.json(facility);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating facility:", error);
+      res.status(500).json({ message: "Failed to update facility" });
+    }
+  });
+
+  // ============================================
+  // Location routes
+  // ============================================
+
+  // Get locations for a facility
+  app.get("/api/facilities/:facilityId/locations", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { facilityId } = req.params;
+      const locations = await storage.getLocations(facilityId, userId);
+      res.json(locations);
+    } catch (error) {
+      console.error("Error fetching locations:", error);
+      res.status(500).json({ message: "Failed to fetch locations" });
+    }
+  });
+
+  // Create new location
+  app.post("/api/facilities/:facilityId/locations", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { facilityId } = req.params;
+      const data = insertLocationSchema.parse({
+        ...req.body,
+        facilityId
+      });
+      const location = await storage.createLocation(data, userId);
+      res.status(201).json(location);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating location:", error);
+      res.status(500).json({ message: "Failed to create location" });
+    }
+  });
+
+  // Update location
+  app.patch("/api/locations/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const data = insertLocationSchema.partial().parse(req.body);
+      const location = await storage.updateLocation(id, data, userId);
+      
+      if (!location) {
+        return res.status(404).json({ message: "Location not found" });
+      }
+      
+      res.json(location);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating location:", error);
+      res.status(500).json({ message: "Failed to update location" });
     }
   });
 

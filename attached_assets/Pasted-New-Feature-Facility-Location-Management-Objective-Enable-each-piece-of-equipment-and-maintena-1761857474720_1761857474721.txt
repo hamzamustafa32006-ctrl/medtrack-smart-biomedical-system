@@ -1,0 +1,95 @@
+New Feature: Facility & Location Management
+🎯 Objective
+Enable each piece of equipment and maintenance plan to be grouped under:
+Facility → Location → Equipment.
+This lets you:
+Filter maintenance tasks by facility/building.
+Generate alerts per facility or department.
+Assign technicians per location.
+1️⃣ Data Model Changes (SQL / ORM)
+-- Facilities (Hospital, Clinic, Lab, etc.)
+CREATE TABLE facilities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  address TEXT,
+  contact_person TEXT,
+  phone TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Locations (inside a facility)
+CREATE TABLE locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id UUID REFERENCES facilities(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  floor TEXT,
+  room TEXT,
+  department TEXT,
+  notes TEXT,
+  UNIQUE (facility_id, name)
+);
+
+-- Add foreign keys to Equipment
+ALTER TABLE equipment
+ADD COLUMN facility_id UUID REFERENCES facilities(id),
+ADD COLUMN location_id UUID REFERENCES locations(id);
+2️⃣ API Endpoints
+Facilities
+GET   /facilities
+POST  /facilities        {name, code, address, contact_person}
+GET   /facilities/{id}
+PATCH /facilities/{id}
+DELETE /facilities/{id}
+Locations
+GET   /facilities/{facility_id}/locations
+POST  /facilities/{facility_id}/locations  {name, floor, room}
+PATCH /locations/{id}
+DELETE /locations/{id}
+Filters for Equipment/Tasks
+GET /equipment?facility_id=...&location_id=...
+GET /tasks?facility_id=...&location_id=...
+3️⃣ UI Integration
+a) Equipment Form
+Add dropdowns:
+Facility → Location (dynamic)
+Auto-populate location_id on selection.
+b) Dashboard Filters
+Facility selector at top.
+Location sub-filter.
+“All Facilities” default.
+c) Facility Page
+Card view: basic info + number of equipment.
+“View Locations” → list of rooms/floors + equipment count + open tasks.
+4️⃣ Task Generation Enhancement
+When generating tasks:
+task.facility_id = equipment.facility_id
+task.location_id = equipment.location_id
+✅ Enables:
+Aggregated counts per facility (“10 tasks due in Radiology”).
+Facility-level overdue reports.
+Email notifications grouped per facility manager.
+5️⃣ Example Payloads (REST)
+Create Facility
+{
+  "name": "Abdullah Al-Salem University Hospital",
+  "code": "AASU-MED",
+  "address": "Kuwait City, Block 4",
+  "contact_person": "Eng. Hamza Ismail",
+  "phone": "+965-99999999"
+}
+Create Location
+{
+  "facility_id": "fac-123",
+  "name": "Radiology Dept.",
+  "floor": "1",
+  "room": "B-12",
+  "department": "Diagnostic Imaging"
+}
+6️⃣ Next Tasks after this Module
+Stage	Goal	Example Output
+✅ Current	Facility & Location	Facility-based filtering works
+🔜 Next	Link to Task Generator	Each task carries facility/location IDs
+⚙️ Then	Facility Reports	Overdue per facility, compliance %, etc.
+📱 Later	Technician Assignment	Restrict view to their facility only

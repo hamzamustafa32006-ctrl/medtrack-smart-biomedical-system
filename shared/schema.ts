@@ -62,6 +62,8 @@ export const facilities = pgTable("facilities", {
   name: varchar("name", { length: 255 }).notNull(),
   code: varchar("code", { length: 50 }), // Short identifier like "BLDG-A"
   address: text("address"),
+  contactPerson: varchar("contact_person", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
