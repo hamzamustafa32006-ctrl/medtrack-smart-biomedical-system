@@ -1,0 +1,204 @@
+What to build (order)
+Facilities admin
+Pages: Facilities List, Facility Detail (shows locations), Add/Edit modals.
+CRUD routes:
+GET /facilities
+POST /facilities
+PATCH /facilities/:id
+DELETE /facilities/:id (soft delete if you prefer)
+Locations admin
+Nested under facility:
+GET /facilities/:facilityId/locations
+POST /facilities/:facilityId/locations
+PATCH /locations/:id
+DELETE /locations/:id
+Equipment form upgrade
+Add Facility select → drives a Location select.
+Inline “+ Add location” quick-add modal.
+Persist facility_id + location_id.
+Filtering
+Add facility/location filters to Equipment List and Tasks List:
+/equipment?facility_id=&location_id=
+/tasks?facility_id=&location_id=
+TypeScript types (frontend)
+export type Facility = {
+  id: string; name: string; code?: string;
+  address?: string; contact_person?: string; phone?: string;
+};
+
+export type Location = {
+  id: string; facility_id: string; name: string;
+  floor?: string; room?: string; department?: string; notes?: string;
+};
+
+export type Equipment = {
+  id?: string;
+  name: string;
+  equipment_id_code?: string;
+  type?: string;
+  facility_id: string;
+  location_id: string;
+  frequency_days?: number;
+  last_maintenance_date?: string; // "dd/mm/yyyy" or ISO; normalize server-side
+  notes?: string;
+};
+React Query hooks
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+export const useFacilities = () =>
+  useQuery<Facility[]>({ queryKey: ["facilities"], queryFn: () =>
+    fetch("/api/facilities").then(r => r.json())
+  });
+
+export const useLocations = (facilityId?: string) =>
+  useQuery<Location[]>({
+    queryKey: ["locations", facilityId],
+    queryFn: () => fetch(`/api/facilities/${facilityId}/locations`).then(r => r.json()),
+    enabled: !!facilityId
+  });
+
+export const useCreateLocation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Partial<Location>) =>
+      fetch(`/api/facilities/${payload.facility_id}/locations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(r => r.json()),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ["locations", vars.facility_id] })
+  });
+};
+Equipment form (dependent selects + quick-add)
+import { useForm, Controller } from "react-hook-form";
+import { useFacilities, useLocations, useCreateLocation } from "@/hooks";
+import { useState } from "react";
+
+type Props = { initial?: Partial<Equipment>; onSubmit: (e: Equipment) => Promise<void> };
+
+export default function EquipmentForm({ initial, onSubmit }: Props) {
+  const { control, handleSubmit, watch, setValue } = useForm<Equipment>({
+    defaultValues: {
+      name: initial?.name ?? "",
+      equipment_id_code: initial?.equipment_id_code ?? "",
+      type: initial?.type ?? "",
+      facility_id: initial?.facility_id ?? "",
+      location_id: initial?.location_id ?? "",
+      frequency_days: initial?.frequency_days ?? 30,
+      last_maintenance_date: initial?.last_maintenance_date ?? "",
+      notes: initial?.notes ?? ""
+    }
+  });
+
+  const facilityId = watch("facility_id");
+  const { data: facilities = [], isLoading: loadingFacilities } = useFacilities();
+  const { data: locations = [], isLoading: loadingLocations } = useLocations(facilityId);
+  const createLocation = useCreateLocation();
+  const [showNewLoc, setShowNewLoc] = useState(false);
+  const [newLocName, setNewLocName] = useState("");
+
+  const addLocationInline = async () => {
+    if (!facilityId || !newLocName.trim()) return;
+    const loc = await createLocation.mutateAsync({ facility_id: facilityId, name: newLocName.trim() });
+    setShowNewLoc(false); setNewLocName("");
+    setValue("location_id", loc.id, { shouldValidate: true });
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* Equipment Name */}
+      <Controller name="name" control={control} rules={{ required: true }}
+        render={({ field }) => (
+          <input {...field} placeholder="e.g., MRI Scanner A" className="input w-full" />
+        )}
+      />
+
+      {/* Facility */}
+      <Controller name="facility_id" control={control} rules={{ required: true }}
+        render={({ field }) => (
+          <select {...field} className="select w-full" disabled={loadingFacilities}>
+            <option value="">Select Facility</option>
+            {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        )}
+      />
+
+      {/* Location (dependent) */}
+      <div className="flex gap-2">
+        <Controller name="location_id" control={control} rules={{ required: true }}
+          render={({ field }) => (
+            <select {...field} className="select flex-1" disabled={!facilityId || loadingLocations}>
+              <option value="">{facilityId ? "Select Location" : "Select facility first"}</option>
+              {locations.map(l => (
+                <option key={l.id} value={l.id}>
+                  {l.name}{l.floor ? ` — Floor ${l.floor}` : ""}{l.room ? ` (${l.room})` : ""}
+                </option>
+              ))}
+            </select>
+          )}
+        />
+        <button type="button" className="btn" disabled={!facilityId} onClick={() => setShowNewLoc(true)}>
+          + Add location
+        </button>
+      </div>
+
+      {/* Quick-add location modal */}
+      {showNewLoc && (
+        <div className="modal">
+          <div className="card p-4 space-y-3">
+            <h3 className="text-lg font-semibold">New Location</h3>
+            <input value={newLocName} onChange={e => setNewLocName(e.target.value)}
+                   placeholder="e.g., Radiology Dept., Room 2" className="input w-full" />
+            <div className="flex gap-2">
+              <button type="button" className="btn" onClick={addLocationInline}>Save</button>
+              <button type="button" className="btn-outline" onClick={() => setShowNewLoc(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Other fields */}
+      <Controller name="type" control={control}
+        render={({ field }) => <input {...field} placeholder="e.g., Diagnostic Equipment" className="input w-full" />}
+      />
+      <Controller name="frequency_days" control={control} rules={{ min: 1 }}
+        render={({ field }) => <input type="number" {...field} className="input w-full" placeholder="e.g., 90" />}
+      />
+      <Controller name="last_maintenance_date" control={control}
+        render={({ field }) => (
+          <input {...field} className="input w-full" placeholder="dd/mm/yyyy" />
+        )}
+      />
+      <Controller name="notes" control={control}
+        render={({ field }) => <textarea {...field} className="textarea w-full" placeholder="Additional notes..." />}
+      />
+
+      <div className="flex justify-end gap-2">
+        <button type="submit" className="btn-primary">Save Equipment</button>
+      </div>
+    </form>
+  );
+}
+Notes
+When facility_id changes, React Hook Form keeps location_id; consider setValue("location_id","") on change if you want to force re-selection.
+Normalize last_maintenance_date server-side to ISO; accept dd/mm/yyyy.
+Facilities & Locations UI (quick scaffold)
+/facilities: list with counts (equipment, open tasks).
+/facilities/:id: tabs → Locations | Equipment | Reports.
+“Add Location” button opens modal with name, floor, room, department.
+Permissions (RBAC quick rules)
+Viewer/Technician: read facilities & locations.
+Supervisor: create locations; edit names/metadata.
+Admin: CRUD facilities; delete locations (guard if in use).
+Backend guard example:
+Prevent deleting a facility with existing equipment unless force=true and you cascade/migrate equipment.
+Validation & UX polish
+Facility required; location required.
+If a facility has 0 locations, show inline empty-state CTA: “Create your first location.”
+Autogenerate equipment_id_code (e.g., AASU-<FAC>-EQ-###) with override.
+Acceptance criteria (done = ✅)
+Can create facility & locations from the UI.
+Equipment form saves with facility_id + location_id.
+Equipment/Tasks lists filter by facility & location.
+Inline “Add location” works and selects newly created location.
+API enforces foreign keys; 400 on invalid facility/location.
