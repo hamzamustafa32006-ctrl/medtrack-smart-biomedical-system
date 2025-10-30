@@ -1,0 +1,89 @@
+Maintenance Alert App – Visual Style Guide (MVP v1)
+1. Look & Feel
+Emotional Tone:
+Professional, trustworthy, and calm.
+Clear and focused: emphasizes reliability and precision.
+Minimalist: avoids clutter, highlights actionable items.
+Brand Personality (as expressed through UI):
+Friendly but authoritative: guides engineers confidently without being overwhelming.
+Efficient & practical: prioritizes essential functions like alerts and history tracking.
+Calm & reassuring: communicates reliability, critical for hospital/industrial environments.
+2. Color Palette
+Role	Color	HEX	RGB	Usage
+Primary	Blue	#0057B7	(0, 87, 183)	Main navigation, primary buttons, top bar, active states.
+Secondary 1	Dark Gray	#333333	(51, 51, 51)	Body text, subheadings, inactive items.
+Secondary 2	Light Gray	#F4F4F4	(244, 244, 244)	Backgrounds, cards, containers, secondary sections.
+Accent	Orange	#FF6D00	(255, 109, 0)	Alerts, notifications, CTAs requiring attention (e.g., overdue contracts).
+Usage Notes:
+Use primary blue for actionable elements like buttons and highlighted active states.
+Secondary grays provide hierarchy and reduce visual noise.
+Accent orange should be used sparingly for urgent alerts or important highlights.
+Backgrounds remain light and neutral to maximize readability.
+3. Typography
+Role	Font	Weight	Size	Usage / Notes
+Headings	Inter / Roboto	Bold (700)	H1: 32px, H2: 24px, H3: 18px	Clean, modern, professional tone.
+Body Text	Inter / Roboto	Regular (400)	Body: 16px, Small: 14px	Legible, practical, for lists, descriptions, and card content.
+Captions / Labels	Inter / Roboto	Medium (500)	12px	Subtle info like contract dates or metadata.
+Typography Tone:
+Modern, clean, professional.
+Focus on legibility in mobile and tablet contexts.
+Minimal use of decorative fonts to maintain seriousness.
+4. UI Elements
+Buttons:
+Shape: Rectangular with rounded corners (8px radius).
+Primary button: Blue background (#0057B7), white text.
+Secondary button: Light Gray (#F4F4F4) background, Dark Gray (#333333) text.
+Hover / Active: Slight shadow or darker blue (#004499).
+Disabled: Gray (#CCCCCC) background, light gray text.
+Input Fields:
+Style: Rectangular with 6px border-radius.
+Border: Light gray (#CCCCCC), turns primary blue (#0057B7) on focus.
+Labels: Above input, regular 14px font, dark gray (#333333).
+Placeholder text: Light gray (#AAAAAA).
+Navigation:
+Mobile: Bottom tab bar, icons + labels.
+Top bar: Page title, optional search icon.
+Desktop/Tablet: Top bar with dropdown menu or sidebar for additional options.
+Cards / Containers:
+Background: White (#FFFFFF) or light gray (#F4F4F4).
+Rounded corners: 8px.
+Shadow: Subtle (#000000, 5% opacity) to lift content.
+Padding: 16px standard.
+Used for maintenance history, contract details, or alerts.
+5. Iconography & Imagery
+Icons:
+Style: Minimalist, outline icons.
+Size: 24px standard, 16px for inline actions.
+Use: Represent equipment, alerts, notifications, history, and settings.
+Images / Illustrations:
+Prefer abstract or schematic illustrations for onboarding/tutorial screens.
+Avoid realistic or stock photos of people.
+Maintain clean, flat, minimal design to reduce visual distraction.
+6. Layout & Spacing
+Grid System:
+8px base spacing (margins, paddings, gutters).
+Consistent alignment of cards, inputs, and buttons.
+White Space:
+Use generously to reduce cognitive load.
+Ensure clear separation between alerts, lists, and contract details.
+Screen Ratios / Responsive Design:
+Mobile: 360–414px width (standard smartphones).
+Tablet: 768px width.
+Desktop: Optional for admin view, 1024px+ width.
+Flexible columns: 1 column on mobile, 2–3 on tablet/desktop.
+7. Brand Consistency Notes
+DOs:
+Keep a consistent blue primary theme for key actions.
+Use orange accent only for urgent alerts.
+Maintain clean typography for readability.
+Use consistent spacing and alignment across screens.
+Highlight actionable items clearly; avoid overloading the user with info.
+DON’Ts:
+Don’t use multiple accent colors that dilute the alert system.
+Don’t use decorative fonts or heavy textures.
+Don’t crowd screens with too much text or buttons.
+Don’t use realistic photos that conflict with the professional tone.
+Alignment with Product Mission:
+The design communicates trust, reliability, and efficiency.
+Minimalist approach ensures users focus on critical maintenance alerts and history.
+Supports quick adoption and reduces cognitive load for engineers in high-stakes environments.
