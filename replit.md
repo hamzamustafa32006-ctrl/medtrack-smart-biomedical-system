@@ -49,11 +49,19 @@ Preferred communication style: Simple, everyday language.
 - RESTful API endpoints following resource-oriented patterns
 - Route structure in `server/routes.ts`:
   - `/api/auth/*` - Authentication endpoints
-  - `/api/equipment` - Equipment CRUD operations
+  - `/api/facilities` - Facility management (CRUD)
+  - `/api/locations` - Location management within facilities
+  - `/api/equipment` - Equipment CRUD with CSV import/export
   - `/api/contracts` - Contract management
   - `/api/maintenance-records` - Maintenance history tracking
-- Middleware for authentication checks on protected routes
+  - `/api/maintenance-plans` - Plan creation and management
+  - `/api/maintenance-tasks` - Task generation, assignment, completion
+  - `/api/alerts` - Alert management (acknowledge, snooze, resolve)
+  - `/api/notifications` - Notification logs and delivery status
+  - `/api/audit-logs` - Audit trail queries (admin only)
+- Middleware for authentication checks and RBAC enforcement on protected routes
 - Request logging middleware for API monitoring
+- Audit logging middleware for all write operations
 
 **Authentication & Authorization**
 - Replit Auth integration via OpenID Connect (OIDC)
@@ -76,10 +84,17 @@ Preferred communication style: Simple, everyday language.
 
 **Database Schema** (`shared/schema.ts`)
 - `sessions` - Express session storage (required for authentication)
-- `users` - User profiles from Replit Auth (email, names, profile image)
-- `equipment` - Equipment tracking (name, location, model, maintenance frequency)
+- `users` - User profiles with roles (admin, supervisor, technician, viewer), notification preferences, timezone (Kuwait default)
+- `facilities` - Facility/building hierarchy with codes and addresses
+- `locations` - Specific locations within facilities (floor, room, department)
+- `equipment` - Equipment tracking with facility/location refs, manufacturer, model, serial, status, criticality, barcode, install dates
 - `contracts` - Service contracts (vendor info, dates, alert thresholds)
 - `maintenanceRecords` - Maintenance history (dates, types, completion status)
+- `maintenancePlans` - Scheduled maintenance definitions (frequency, buffer days, checklist, policy: PM/Calibration/Safety)
+- `maintenanceTasks` - Auto-generated tasks from plans (due dates, status, assignment, priority, completion tracking)
+- `alerts` - Multi-level alerts tied to tasks/contracts (severity, escalation, snooze, multi-channel delivery)
+- `notificationLogs` - Delivery tracking for email/SMS/push notifications with provider responses
+- `auditLogs` - Complete audit trail of all create/update/delete operations with before/after state
 
 **Schema Validation**
 - Drizzle-Zod for generating Zod schemas from database schema

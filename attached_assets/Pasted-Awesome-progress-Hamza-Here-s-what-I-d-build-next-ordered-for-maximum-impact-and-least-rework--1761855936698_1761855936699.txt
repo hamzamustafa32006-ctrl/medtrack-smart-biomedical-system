@@ -1,0 +1,106 @@
+Awesome progress, Hamza. Here’s what I’d build next—ordered for maximum impact and least rework.
+
+# Highest-value next steps (build in this order)
+
+1. Scheduling & Alert Engine (core)
+
+* Compute `next_due` from `last_event + frequency_days (+buffer)`.
+* Generate/refresh open tasks; statuses: Open, Due Today, Overdue, Completed.
+* Escalation (T+3, T+7) and snooze.
+* Timezone + Kuwait dd/mm/yyyy support.
+  **Done when:** a nightly job creates tasks and sends in-app alerts for your 15 seeded devices.
+
+2. Notifications (multi-channel)
+
+* Providers: email first, then in-app banner, then WhatsApp/SMS (Twilio) later.
+* Per-user channel preferences; delivery log.
+  **Done when:** marking a task “Overdue” sends an email and it appears in Notification Log.
+
+3. Task List & Completion Flow
+
+* Technician view: filter by facility/location/status; scan QR → open device → open task.
+* Complete task with checklist, notes, photos.
+  **Done when:** completing a task auto-creates the next one (rolling schedule) and closes the alert.
+
+4. CSV/Excel Import & Export
+
+* Map to your form fields: `equipment_id_code,name,location,type,frequency_days,last_maintenance_date,notes`.
+* Validation & row-level error report.
+  **Done when:** you can import the 15 devices in one go and export to CSV.
+
+5. RBAC + Audit
+
+* Roles: Admin, Supervisor, Technician, Viewer.
+* Audit log for create/update/complete/import.
+  **Done when:** a Technician cannot edit frequency; all writes show in an audit table.
+
+# Quick wins (polish while you build)
+
+* Date picker that accepts dd/mm/yyyy + ISO; show next due date preview in the form.
+* Consistent IDs (EQ-###) autogeneration with override.
+* “Duplicate equipment” action to speed entry.
+
+# Sprint plan (2 weeks)
+
+**Day 1–2: Data & jobs**
+
+* Tables: `maintenance_plans`, `maintenance_tasks`, `alerts`, `notification_logs`, `audit_logs`.
+* Cron worker (BullMQ/Celery): nightly “task generator”.
+
+**Day 3–4: Alert rules**
+
+* Buffer days + escalation rules.
+* De-dup with Redis keys.
+* In-app notifications UI.
+
+**Day 5–6: Email**
+
+* Provider integration (SendGrid/SES).
+* Templated emails (Overdue, Due Today, Escalated).
+* Delivery metrics.
+
+**Day 7–8: Technician UX**
+
+* Task list + filters.
+* Task detail → checklist → complete with photos.
+* Auto-roll next task creation.
+
+**Day 9: Import/Export**
+
+* CSV parser, field mapping, row errors download.
+* One-click export.
+
+**Day 10: RBAC & Audit**
+
+* Middleware permissions.
+* Write audit entries everywhere.
+
+**Day 11–12: Hardening**
+
+* E2E tests (Playwright): create → plan → job runs → alert → complete.
+* Seed script with your 15 devices.
+
+**Day 13–14: Reports v1**
+
+* Pages: Overdue, Due in 30 days, Compliance rate (% completed on time).
+
+# Acceptance tests (spot checks)
+
+* When `last_maintenance=30/10/2025` and frequency 30 → next due = 29/11/2025 (dd/mm).
+* Completing a task on time moves next due by +frequency and closes its alert.
+* Overdue by 7 days escalates and emails Supervisor.
+* Importing a CSV with a bad date yields a row error and does not create partial records.
+* Technician cannot edit frequency (RBAC).
+
+# Nice-to-have after that
+
+* QR/Barcode labels (open device by scan).
+* Contract module (end-date alerts separate from maintenance).
+* PWA offline drafts for task completion.
+* iCal feed for each user’s due tasks.
+
+If you want, I can generate:
+
+* a CSV template with your 15 devices,
+* the SQL schema for these tables,
+* or the task generator pseudocode ready to drop into your worker.
