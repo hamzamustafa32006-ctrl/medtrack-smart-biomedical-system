@@ -1,0 +1,95 @@
+Feature Overview
+Goal:
+Allow users to create, view, and manage Facilities (e.g., hospitals, campuses) and their internal Locations (departments, rooms, labs), and assign each Equipment item to a specific location within a facility.
+This creates hierarchy and improves filtering, reporting, and alert targeting.
+Facility → Locations → Equipment → Maintenance Tasks
+🏗️ 2. Backend Implementation
+Database Tables
+CREATE TABLE facilities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  address TEXT,
+  contact_person TEXT,
+  phone TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id UUID REFERENCES facilities(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  floor TEXT,
+  room TEXT,
+  department TEXT,
+  notes TEXT,
+  UNIQUE (facility_id, name)
+);
+
+ALTER TABLE equipment
+  ADD COLUMN facility_id UUID REFERENCES facilities(id),
+  ADD COLUMN location_id UUID REFERENCES locations(id);
+API Endpoints
+Method	Endpoint	Description
+GET	/facilities	List all facilities
+POST	/facilities	Create a new facility
+PATCH	/facilities/:id	Update facility details
+DELETE	/facilities/:id	Delete a facility
+GET	/facilities/:id/locations	Get all locations under a facility
+POST	/facilities/:id/locations	Add a location to a facility
+PATCH	/locations/:id	Update location
+DELETE	/locations/:id	Delete location
+Equipment Integration
+Method	Endpoint	Description
+GET	/equipment?facility_id=&location_id=	Filter by facility/location
+POST	/equipment	Create equipment linked to facility/location
+PATCH	/equipment/:id	Update assigned facility/location
+💻 3. Frontend Integration
+a. Facility Management Page
+List all facilities.
+“Add Facility” modal form.
+Facility detail view → lists locations & assigned equipment count.
+b. Location Management Page
+Nested under facility.
+CRUD for locations (Name, Floor, Room, Department).
+Search bar and quick add.
+c. Equipment Page Updates
+Add two dropdowns in the Equipment Form:
+Facility (Parent) → loads all facilities.
+Location (Dependent) → filters based on selected facility.
+Inline option: “+ Add new location”.
+⚙️ 4. Task Generation Integration
+When tasks are auto-generated:
+Attach facility_id and location_id from the equipment record.
+Filter alerts and reports by facility or location.
+task.facility_id = equipment.facility_id
+task.location_id = equipment.location_id
+📊 5. Dashboard & Reports
+Add facility-based grouping and metrics:
+“Tasks per Facility”
+“Overdue Maintenance by Department”
+“Equipment Distribution by Location”
+Example SQL:
+SELECT f.name AS facility, COUNT(e.id) AS equipment_count
+FROM equipment e
+JOIN facilities f ON e.facility_id = f.id
+GROUP BY f.name;
+🔐 6. Permissions (RBAC)
+Role	Permissions
+Technician	View facilities/locations
+Supervisor	Add/update locations
+Admin	Full facility & location CRUD
+Add API middleware checks for role-based restrictions.
+🧪 7. Testing Checklist
+✅ Can create/edit/delete facilities
+✅ Can create/edit/delete locations under a facility
+✅ Can assign facility/location when creating equipment
+✅ Equipment table shows facility & location columns
+✅ Filtering by facility/location works in Equipment List
+✅ Alerts & Tasks inherit correct facility/location
+✅ Deleting facility cascades to locations & their equipment (if intended)
+🚀 8. Next Steps (optional enhancements)
+QR code per location for quick scan and equipment lookup.
+Facility-level export reports (maintenance summary).
+Map visualization (using Leaflet or Google Maps) for facility layout.
+Multi-facility login scope for enterprise accounts.
