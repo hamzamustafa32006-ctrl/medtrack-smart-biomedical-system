@@ -1,0 +1,40 @@
+import { Link, useLocation } from "wouter";
+import { Bell, ClipboardList, History, Settings } from "lucide-react";
+
+const navItems = [
+  { path: "/", icon: Bell, label: "Alerts", testId: "nav-alerts" },
+  { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "nav-equipment" },
+  { path: "/history", icon: History, label: "History", testId: "nav-history" },
+  { path: "/settings", icon: Settings, label: "Settings", testId: "nav-settings" },
+];
+
+export function BottomNav() {
+  const [location] = useLocation();
+
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-card-border md:hidden z-50">
+      <div className="grid grid-cols-4 h-16">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = location === item.path;
+          
+          return (
+            <Link key={item.path} href={item.path}>
+              <a
+                data-testid={item.testId}
+                className={`
+                  flex flex-col items-center justify-center h-full gap-1
+                  hover-elevate active-elevate-2
+                  ${isActive ? "text-primary" : "text-muted-foreground"}
+                `}
+              >
+                <Icon className="w-6 h-6" />
+                <span className="text-xs font-medium">{item.label}</span>
+              </a>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
