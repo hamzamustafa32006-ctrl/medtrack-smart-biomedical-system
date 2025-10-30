@@ -1,0 +1,141 @@
+System Overview
+🎯 Objective
+Enable users to:
+Create and manage Facilities (e.g., hospitals, labs, departments).
+Add Locations (e.g., rooms, wards, labs) inside each facility.
+Link Equipment to its exact facility and location.
+Filter, report, and generate maintenance alerts per facility/location.
+Hierarchy
+Facility
+  └── Locations
+        └── Equipment
+              └── Maintenance Tasks
+🗄️ 2. Database Design
+Facilities Table
+CREATE TABLE facilities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  address TEXT,
+  contact_person TEXT,
+  phone TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+Locations Table
+CREATE TABLE locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id UUID REFERENCES facilities(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  floor TEXT,
+  room TEXT,
+  department TEXT,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (facility_id, name)
+);
+Modify Equipment Table
+ALTER TABLE equipment
+  ADD COLUMN facility_id UUID REFERENCES facilities(id),
+  ADD COLUMN location_id UUID REFERENCES locations(id);
+🧠 3. Backend Architecture
+Assuming your backend is Node.js (Express or NestJS) or Python FastAPI, here’s how to structure it:
+Routes
+Facilities
+Method	Endpoint	Description
+GET	/facilities	List all facilities
+POST	/facilities	Create a new facility
+GET	/facilities/:id	Get facility details
+PATCH	/facilities/:id	Update facility
+DELETE	/facilities/:id	Delete facility (with cascade check)
+Locations
+Method	Endpoint	Description
+GET	/facilities/:facilityId/locations	List locations for a facility
+POST	/facilities/:facilityId/locations	Create a new location
+PATCH	/locations/:id	Update location
+DELETE	/locations/:id	Delete location
+Example Payloads
+POST /facilities
+{
+  "name": "Abdullah Al-Salem University Hospital",
+  "code": "AASU-HOSP",
+  "address": "Kuwait City, Block 4",
+  "contact_person": "Eng. Hamza Ismail",
+  "phone": "+965-99999999"
+}
+POST /facilities/:facilityId/locations
+{
+  "name": "Radiology Department",
+  "floor": "1",
+  "room": "B-14",
+  "department": "Imaging"
+}
+Example Express Router (Node.js)
+import express from "express";
+const router = express.Router();
+
+// Facility CRUD
+router.get("/facilities", facilityController.getAll);
+router.post("/facilities", facilityController.create);
+router.get("/facilities/:id", facilityController.getOne);
+router.patch("/facilities/:id", facilityController.update);
+router.delete("/facilities/:id", facilityController.delete);
+
+// Location CRUD
+router.get("/facilities/:facilityId/locations", locationController.listByFacility);
+router.post("/facilities/:facilityId/locations", locationController.create);
+router.patch("/locations/:id", locationController.update);
+router.delete("/locations/:id", locationController.delete);
+
+export default router;
+💻 4. Frontend (React)
+a. Facility Management Page
+Table view of all facilities.
+“Add Facility” button opens modal form.
+Inline edit/delete.
+b. Location Management Page
+Nested view: when viewing a facility, list all its locations.
+“Add Location” modal with fields: Name, Floor, Room, Department.
+Delete or edit inline.
+c. Equipment Form Updates
+Add dropdowns:
+<select value={facilityId} onChange={handleFacilityChange}>
+  <option value="">Select Facility</option>
+  {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+</select>
+
+<select value={locationId} onChange={handleLocationChange} disabled={!facilityId}>
+  <option value="">Select Location</option>
+  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+</select>
+✅ Optional: “+ Add Location” button to open a mini modal.
+🔐 5. Permissions (RBAC Integration)
+Role	Actions
+Admin	Full CRUD on facilities & locations
+Supervisor	Create/edit locations
+Technician	View-only access
+API middleware can enforce this, e.g.:
+if (user.role !== "admin") return res.status(403).send("Access denied");
+📊 6. Reporting & Filtering
+Add filters to key modules:
+Equipment list → filter by Facility / Location.
+Maintenance Tasks → show tasks by facility or department.
+Facility overview → show #equipment, #open alerts.
+Example query:
+SELECT f.name AS facility, COUNT(e.id) AS equipment_count
+FROM equipment e
+JOIN facilities f ON e.facility_id = f.id
+GROUP BY f.name;
+🧪 7. Testing Checklist
+✅ Create facility and verify it appears in list
+✅ Add multiple locations under facility
+✅ Delete facility → all child locations removed
+✅ Assign equipment to facility/location
+✅ Filter equipment and tasks by facility/location
+✅ Access control enforced
+🚀 8. Future Enhancements
+QR code for locations: Scan → open equipment list for that room.
+Map integration: Display facility layout (Google Maps / Leaflet).
+Facility dashboard: KPIs — equipment count, overdue maintenance %, active alerts.
+Import/export: CSV bulk import of facilities/locations.
