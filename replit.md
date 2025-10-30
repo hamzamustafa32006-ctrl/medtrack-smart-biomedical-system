@@ -116,8 +116,18 @@ Preferred communication style: Simple, everyday language.
 **Third-Party UI Libraries**
 - Radix UI for accessible component primitives
 - Lucide React for icon system
-- date-fns for date manipulation and formatting
+- date-fns and date-fns-tz for date manipulation, formatting, and timezone support
 - class-variance-authority (CVA) for variant-based component styling
+
+**Date Formatting System**
+- Kuwait timezone (Asia/Kuwait) as default for all users
+- Date formatting utilities in `client/src/lib/dateUtils.ts`:
+  - formatDate(): dd/MM/yyyy format (e.g., "15/01/2024")
+  - formatDateTime(): dd/MM/yyyy HH:mm format
+  - formatDateHuman(): "15 Jan 2024" format
+  - formatDateCompact(): "15 Jan" format
+- All frontend pages use formatDate() for consistent Kuwait date display
+- Backend stores dates as ISO timestamps in PostgreSQL (timezone-safe)
 
 **Build & Development Tools**
 - Replit-specific plugins for development experience (cartographer, dev banner, runtime error overlay)

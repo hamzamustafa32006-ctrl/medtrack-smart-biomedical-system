@@ -317,6 +317,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // Task Generation routes (Task 2)
+  // ============================================
+
+  // Generate/refresh maintenance tasks from plans
+  app.post("/api/maintenance-tasks/generate", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { generateMaintenanceTasks } = await import("./taskGenerationService");
+      const result = await generateMaintenanceTasks(userId);
+      
+      res.json({
+        message: "Task generation completed",
+        generated: result.generated,
+        updated: result.updated,
+        errors: result.errors,
+      });
+    } catch (error) {
+      console.error("Error generating maintenance tasks:", error);
+      res.status(500).json({ message: "Failed to generate tasks" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
