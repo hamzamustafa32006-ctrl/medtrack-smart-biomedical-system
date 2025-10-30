@@ -1,0 +1,208 @@
+Maintenance Alert App — System Architecture Documentation
+1) Purpose & Scope
+A web/mobile system that tracks biomedical/industrial equipment, maintenance schedules and contracts, then delivers timely alerts and supports basic work-order flows. Designed for single hospital or multi-facility (multi-tenant-ready).
+2) High-Level Architecture
+Frontend (Web + PWA)
+React (Vite/Next.js), TypeScript, Tailwind.
+Auth via OAuth/OIDC (e.g., Azure AD/Google) + JWT.
+Offline cache using Service Worker + IndexedDB for draft work orders.
+Backend
+REST + Webhooks; optional GraphQL gateway.
+Node.js (NestJS/Express) or Python (FastAPI) with layered architecture (controllers → services → repositories).
+Domain services: Equipment, Schedule Engine, Alerts/Notifications, Contracts, Work Orders, Reports, Import/Export.
+Data Layer
+Primary DB: PostgreSQL.
+Search & filtering: Postgres GIN/Trigram indexes; optional OpenSearch for full-text.
+Cache: Redis (sessions, rate limits, computed next-due dates).
+Object storage: S3/GCS for manuals, photos, certificates.
+Async & Scheduling
+Message bus/queues: RabbitMQ/SQS.
+Job runner: BullMQ/Celery; cron-like schedules for daily alert computation.
+Real-time: WebSocket/SSE for in-app alerts.
+Integrations
+Email (SES/SendGrid), SMS/WhatsApp (Twilio), Push (FCM/APNs), Calendar (ICS export), SSO, CMMS/ERP (outbound webhooks), Barcode/QR.
+Deployment
+Containers (Docker) on AWS ECS/Fargate or GKE; IaC with Terraform.
+CDN + WAF (CloudFront).
+GitHub Actions CI/CD with blue-green or canary.
+3) Core Requirements
+Track equipment, contracts, locations, vendors, maintenance plans, and history.
+Compute next-due tasks and send multi-channel alerts with snooze/escalation.
+Role-based access (RBAC) with audit logs.
+Import/export (CSV/Excel/JSON).
+Reports (compliance, overdue, MTBF/MTTR basics).
+Multi-facility and optional multi-tenant isolation.
+4) Domain Model (ERD Summary)
+users(id, tenant_id, name, email, phone, role, status, last_login_at, created_at)
+roles(id, name, permissions_json)
+facilities(id, tenant_id, name, code, address)
+locations(id, facility_id, name, floor, room, notes)
+vendors(id, tenant_id, name, contact_name, email, phone)
+equipment(id, tenant_id, facility_id, location_id, equipment_id_code, name, type, manufacturer, model, serial, install_date, status, criticality, barcode, created_by, created_at)
+contracts(id, equipment_id, vendor_id, contract_no, start_date, end_date, coverage_json, cost, attachment_url, status)
+maintenance_plans(id, equipment_id, frequency_days, buffer_days, checklist_json, policy: enum[PM,Calibration,Safety], active)
+maintenance_tasks(id, plan_id, due_date, window_end_date, generated_reason, status, assigned_to, priority, created_at)
+maintenance_events(id, task_id, performed_at, performed_by, result: enum[Pass,Fail], notes, attachments[])
+alerts(id, tenant_id, entity_type, entity_id, severity, title, message, status, first_trigger_at, last_sent_at, next_retry_at, channels_json, escalation_level)
+work_orders(id, equipment_id, opened_by, assigned_to, status, priority, sla_due_at, description, resolution, cost)
+attachments(id, entity_type, entity_id, url, filename, content_type, uploaded_by, uploaded_at)
+audit_logs(id, tenant_id, actor_id, action, entity_type, entity_id, before_json, after_json, ip, created_at)
+notification_logs(id, alert_id, channel, recipient, provider_msg_id, status, sent_at, response_json)
+Indexes/Constraints
+Unique (tenant_id, equipment_id_code).
+Partial indexes on maintenance_tasks(status='Open'), alerts(status in ('Open','Escalated')).
+GIN on checklist_json, permissions_json.
+5) API Design (REST)
+Auth
+POST /auth/login (OIDC callback).
+GET /auth/me
+Equipment
+GET /equipment?facility_id=&q=&type=&status=&page=
+POST /equipment
+GET /equipment/{id} PATCH /equipment/{id} DELETE /equipment/{id}
+POST /equipment/import (CSV) GET /equipment/export.csv
+Maintenance
+GET /plans?equipment_id=
+POST /plans (frequency_days, buffer_days, checklist)
+GET /tasks?status=Open&due_before=
+POST /tasks/{id}/complete (result, notes, attachments[])
+POST /tasks/generate (manual trigger)
+Alerts & Notifications
+GET /alerts?status= POST /alerts/{id}/ack POST /alerts/{id}/snooze
+Webhook: POST /webhooks/alerted (for integrations)
+Work Orders
+POST /work_orders PATCH /work_orders/{id} GET /work_orders?status=
+Reports
+GET /reports/compliance?from=&to=
+GET /reports/overdue GET /reports/kpis
+Tenancy & Admin
+GET /facilities POST /facilities
+GET /users POST /users PATCH /users/{id}
+GET /audit_logs?entity_type=&entity_id=
+Error format
+{ "error":"validation_error", "details":[{"field":"frequency_days","message":"must be > 0"}], "request_id":"abc123" }
+6) Scheduling & Alert Logic
+Computation
+For each active maintenance_plans record, compute next_due = last_event_date + frequency_days.
+Apply buffer_days for early warnings.
+Generate/refresh an Open maintenance_task if none exists within window.
+Alert policy:
+T-buffer: Info alert to assignee + supervisor.
+T-0: Warning alert (email + push + in-app).
+T+X overdue: escalate levels (e.g., 3, 7, 14 days) → manager → biomedical head.
+Retry & De-dup
+Redis keys alert:{plan_id}:{due_date} with TTL to prevent duplicates.
+Exponential backoff for provider failures.
+Example Cron Jobs
+0 3 * * * Generate tasks/alerts for next 30 days.
+*/10 * * * * Notification dispatcher.
+0 * * * * SLA breach scanner for work orders.
+7) Security
+OIDC + short-lived access tokens, refresh rotation.
+RBAC: roles → permissions (JSON). Examples:
+Technician: read equipment, complete tasks.
+Supervisor: assign tasks, close WOs, export.
+Admin: user mgmt, tenant config.
+Row-level security by tenant_id.
+Secrets in AWS Secrets Manager; KMS encryption.
+S3 buckets private + signed URLs; server-side encryption.
+Audit logging for all write ops; immutable storage option.
+Rate limiting (per IP + per user) via Redis.
+Input validation & content scanning for uploads.
+GDPR-style data export/delete (per tenant).
+8) Observability & SLOs
+Logs: structured JSON (request_id, user_id, route, latency).
+Metrics: p95 API latency, job durations, notification success rate, task generation counts.
+Tracing: OpenTelemetry.
+Dashboards/Alerts: 5xx rate, queue lag, overdue tasks > threshold.
+SLOs (example)
+API p95 latency < 300 ms.
+Daily task generation finished by 03:10 UTC.
+Notification delivery success > 98%.
+9) Data Lifecycle, Backups & DR
+PITR for Postgres; daily full + 7-day WAL retention.
+S3 versioning + lifecycle (IA → Glacier after 90 days).
+DR: cross-region read replica; RTO 2h, RPO 15m (configurable).
+Archival tables for closed work orders/alerts after 18 months.
+10) Import/Export Schemas
+CSV Columns (Equipment)
+equipment_id_code,name,type,manufacturer,model,serial,facility_code,location,criticality,install_date
+CSV Columns (Plans)
+equipment_id_code,frequency_days,buffer_days,policy,checklist_json
+Example checklist_json
+{"steps":[
+ {"id":"pwr","text":"Power-on self test","type":"check"},
+ {"id":"cal","text":"Verify calibration","type":"check"},
+ {"id":"notes","text":"Notes","type":"text"}]}
+11) Example Sequences (Textual)
+Create Equipment & Plan
+User submits form → POST /equipment.
+Backend stores record, emits equipment.created event.
+User adds plan → POST /plans.
+Scheduler picks plan tonight → generates first maintenance_task if due window falls within horizon.
+Notification service sends T-buffer alert.
+Complete Task
+Tech opens task → uploads results → POST /tasks/{id}/complete.
+Service validates checklist → closes task → writes maintenance_events.
+Recomputes next_due → creates next task if necessary → may cancel open alert.
+12) Configuration & Env Vars (examples)
+APP_ENV, PORT
+DATABASE_URL
+REDIS_URL
+STORAGE_BUCKET, CDN_DOMAIN
+OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET
+TWILIO_*, SENDGRID_*, FIREBASE_*
+TENANCY_MODE = single|multi
+13) Testing Strategy
+Unit tests for services (plan computation, alert escalation).
+Contract tests for REST/GraphQL schemas.
+Integration tests with ephemeral Postgres/Redis using Testcontainers.
+E2E (Playwright/Cypress).
+Load tests (k6) for listing/filtering equipment and batch alert jobs.
+14) Performance & Scale Notes
+Paginated queries with composite indexes (facility_id, type, status).
+Read replicas for reports.
+Batch notifications (provider rate limits).
+Queue sharding by tenant/facility.
+15) UX/Accessibility
+WCAG 2.1 AA: keyboard navigation, high-contrast mode.
+PWA install prompt for techs; offline queue for task completion.
+QR/Barcode scan to open equipment detail quickly.
+16) Roadmap (Next)
+Mobile app (React Native) for offline-first inspections.
+Calendar sync (iCal feed per technician).
+SLA policies per work-order type.
+Vendor portal (limited access).
+Predictive maintenance hooks (timeseries ingestion later).
+17) Sample Objects
+Equipment (POST)
+{
+  "equipment_id_code": "EQ-001",
+  "name": "MRI Scanner A",
+  "type": "Diagnostic Imaging",
+  "facility_id": "fac_B1",
+  "location_id": "loc_rad_1",
+  "manufacturer": "AcmeMed",
+  "model": "MR-7",
+  "serial": "MR7-2025-001",
+  "criticality": "High",
+  "install_date": "2024-06-10"
+}
+Plan (POST)
+{
+  "equipment_id": "e_123",
+  "frequency_days": 30,
+  "buffer_days": 5,
+  "policy": "PM",
+  "checklist_json": {"steps":[{"id":"vis","text":"Visual inspection","type":"check"}]}
+}
+18) Reference Cloud Diagram (AWS – textual)
+Route 53 → CloudFront (WAF) → ALB
+ALB → ECS (Frontend) + ECS (API)
+API → RDS Postgres (Multi-AZ)
+API ↔ Redis (ElastiCache)
+API → S3 (attachments) + SNS/SQS (events)
+Schedulers/Workers on ECS (Fargate) consuming SQS
+SES/Twilio/FCM providers outbound
+CloudWatch + OpenSearch for logs; X-Ray for traces
+Backup via AWS Backup (RDS/S3)
