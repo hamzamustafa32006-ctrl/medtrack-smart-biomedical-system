@@ -14,7 +14,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, Settings, Calendar, Clock } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
+import { differenceInDays } from "date-fns";
+import { formatDate } from "@/lib/dateUtils";
 import type { Equipment, Contract, Facility, Location } from "@shared/schema";
 import { insertEquipmentSchema, insertContractSchema, insertLocationSchema, type InsertEquipment, type InsertContract, type InsertLocation } from "@shared/schema";
 import { z } from "zod";
@@ -566,7 +567,7 @@ export default function EquipmentPage() {
                         <Clock className="w-4 h-4 text-muted-foreground" />
                         <span className="text-muted-foreground">Next maintenance:</span>
                         <span className={`font-medium ${daysUntilMaintenance !== null && daysUntilMaintenance < 0 ? "text-warning" : ""}`}>
-                          {format(nextMaintenance, "MMM d, yyyy")}
+                          {formatDate(nextMaintenance)}
                           {daysUntilMaintenance !== null && (
                             <span className="text-muted-foreground ml-1">
                               ({daysUntilMaintenance < 0 ? "overdue" : `in ${daysUntilMaintenance} days`})

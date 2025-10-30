@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Bell, Calendar, Clock, Plus } from "lucide-react";
-import { format, differenceInDays, isPast } from "date-fns";
+import { differenceInDays, isPast } from "date-fns";
+import { formatDate } from "@/lib/dateUtils";
 import type { Equipment, Contract } from "@shared/schema";
 
 interface AlertItem {
@@ -230,7 +231,7 @@ export default function Home() {
                         <>
                           <div className="flex items-center gap-1">
                             <Calendar className="w-4 h-4" />
-                            <span>{format(new Date(alert.contract.endDate), "MMM d, yyyy")}</span>
+                            <span>{formatDate(alert.contract.endDate)}</span>
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="font-medium">{alert.contract.vendorName}</span>

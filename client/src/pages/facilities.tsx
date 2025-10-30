@@ -12,7 +12,17 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Building2, MapPin, ChevronRight } from "lucide-react";
+import { Plus, Building2, MapPin, ChevronRight, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { Facility, Location } from "@shared/schema";
 import { insertFacilitySchema, insertLocationSchema, type InsertFacility, type InsertLocation } from "@shared/schema";
 import { z } from "zod";
@@ -29,6 +39,9 @@ export default function FacilitiesPage() {
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
   const [expandedFacilities, setExpandedFacilities] = useState<Set<string>>(new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingFacility, setDeletingFacility] = useState<Facility | null>(null);
+  const [deletingLocation, setDeletingLocation] = useState<Location | null>(null);
 
   const { data: facilities, isLoading } = useQuery<Facility[]>({
     queryKey: ["/api/facilities"],
@@ -117,6 +130,76 @@ export default function FacilitiesPage() {
       toast({
         title: "Error",
         description: "Failed to add location",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteFacilityMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/facilities/${id}`);
+    },
+    onSuccess: (_data, facilityId) => {
+      // Invalidate all facility-related queries
+      queryClient.invalidateQueries({ queryKey: ["/api/facilities"] });
+      // Also invalidate this specific facility's locations cache
+      queryClient.invalidateQueries({ queryKey: ["/api/facilities", facilityId, "locations"] });
+      setDeleteConfirmOpen(false);
+      setDeletingFacility(null);
+      toast({
+        title: "Success",
+        description: "Facility deleted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to delete facility",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteLocationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/locations/${id}`);
+    },
+    onSuccess: () => {
+      // Invalidate all location queries to refresh
+      queryClient.invalidateQueries({ queryKey: ["/api/facilities"] });
+      setDeleteConfirmOpen(false);
+      setDeletingLocation(null);
+      toast({
+        title: "Success",
+        description: "Location deleted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to delete location",
         variant: "destructive",
       });
     },
@@ -261,6 +344,16 @@ export default function FacilitiesPage() {
                 isExpanded={expandedFacilities.has(facility.id)}
                 onToggle={() => toggleFacilityExpansion(facility.id)}
                 onAddLocation={() => openLocationDialog(facility)}
+                onDelete={() => {
+                  setDeletingFacility(facility);
+                  setDeletingLocation(null);
+                  setDeleteConfirmOpen(true);
+                }}
+                onDeleteLocation={(location) => {
+                  setDeletingLocation(location);
+                  setDeletingFacility(null);
+                  setDeleteConfirmOpen(true);
+                }}
               />
             ))}
           </div>
@@ -336,6 +429,44 @@ export default function FacilitiesPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingFacility ? (
+                <>
+                  This will permanently delete the facility "{deletingFacility.name}" and all its locations. 
+                  This action cannot be undone.
+                </>
+              ) : deletingLocation ? (
+                <>
+                  This will permanently delete the location "{deletingLocation.name}". 
+                  This action cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deletingFacility) {
+                  deleteFacilityMutation.mutate(deletingFacility.id);
+                } else if (deletingLocation) {
+                  deleteLocationMutation.mutate(deletingLocation.id);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteFacilityMutation.isPending || deleteLocationMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -345,11 +476,15 @@ function FacilityCard({
   isExpanded,
   onToggle,
   onAddLocation,
+  onDelete,
+  onDeleteLocation,
 }: {
   facility: Facility;
   isExpanded: boolean;
   onToggle: () => void;
   onAddLocation: () => void;
+  onDelete: () => void;
+  onDeleteLocation: (location: Location) => void;
 }) {
   const { data: locations, isLoading } = useQuery<Location[]>({
     queryKey: ["/api/facilities", facility.id, "locations"],
@@ -390,11 +525,24 @@ function FacilityCard({
                 )}
               </div>
             </div>
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" data-testid={`button-toggle-facility-${facility.id}`}>
-                <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                data-testid={`button-delete-facility-${facility.id}`}
+              >
+                <Trash2 className="w-4 h-4 text-destructive" />
               </Button>
-            </CollapsibleTrigger>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" data-testid={`button-toggle-facility-${facility.id}`}>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                </Button>
+              </CollapsibleTrigger>
+            </div>
           </div>
         </CardHeader>
         <CollapsibleContent>
@@ -438,6 +586,17 @@ function FacilityCard({
                           <div className="text-sm text-muted-foreground mt-1">{location.notes}</div>
                         )}
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteLocation(location);
+                        }}
+                        data-testid={`button-delete-location-${location.id}`}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
                     </div>
                   ))}
                 </div>

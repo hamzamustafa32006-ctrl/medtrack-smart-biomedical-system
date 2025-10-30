@@ -48,12 +48,14 @@ export interface IStorage {
   getFacilityById(id: string, userId: string): Promise<Facility | undefined>;
   createFacility(data: InsertFacility, userId: string): Promise<Facility>;
   updateFacility(id: string, data: Partial<InsertFacility>, userId: string): Promise<Facility | undefined>;
+  deleteFacility(id: string, userId: string): Promise<boolean>;
   
   // Location operations
   getLocations(facilityId: string, userId?: string): Promise<Location[]>;
   getLocationById(id: string, userId?: string): Promise<Location | undefined>;
   createLocation(data: InsertLocation, userId: string): Promise<Location>;
   updateLocation(id: string, data: Partial<InsertLocation>, userId: string): Promise<Location | undefined>;
+  deleteLocation(id: string, userId: string): Promise<boolean>;
   
   // Equipment operations
   getEquipment(userId: string): Promise<Equipment[]>;
@@ -170,6 +172,22 @@ export class DatabaseStorage implements IStorage {
     return facility;
   }
 
+  async deleteFacility(id: string, userId: string): Promise<boolean> {
+    // Verify ownership
+    const facility = await this.getFacilityById(id, userId);
+    if (!facility) return false;
+
+    // Delete facility (cascade will handle locations via ON DELETE CASCADE)
+    // Use .returning() to verify deletion actually occurred
+    const result = await db
+      .delete(facilities)
+      .where(and(eq(facilities.id, id), eq(facilities.userId, userId)))
+      .returning({ id: facilities.id });
+    
+    // Check if any rows were actually deleted
+    return result.length > 0;
+  }
+
   // ============================================
   // Location operations
   // ============================================
@@ -189,18 +207,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLocationById(id: string, userId?: string): Promise<Location | undefined> {
-    const [location] = await db
-      .select()
-      .from(locations)
-      .where(eq(locations.id, id));
-    
-    // Verify user owns the facility this location belongs to
-    if (location && userId) {
-      const facility = await this.getFacilityById(location.facilityId, userId);
-      if (!facility) return undefined;
+    if (!userId) {
+      // If no userId provided, just fetch by ID (for internal use only)
+      const [location] = await db
+        .select()
+        .from(locations)
+        .where(eq(locations.id, id));
+      return location;
     }
     
-    return location;
+    // Enforce ownership by joining with facilities table
+    const [result] = await db
+      .select({
+        location: locations,
+      })
+      .from(locations)
+      .innerJoin(facilities, eq(locations.facilityId, facilities.id))
+      .where(and(
+        eq(locations.id, id),
+        eq(facilities.userId, userId)
+      ));
+    
+    return result?.location;
   }
 
   async createLocation(data: InsertLocation, userId: string): Promise<Location> {
@@ -240,6 +268,22 @@ export class DatabaseStorage implements IStorage {
       .where(eq(locations.id, id))
       .returning();
     return location;
+  }
+
+  async deleteLocation(id: string, userId: string): Promise<boolean> {
+    // Verify user owns the location (through its facility)
+    const location = await this.getLocationById(id, userId);
+    if (!location) return false;
+
+    // Delete location
+    // Use .returning() to verify deletion actually occurred
+    const result = await db
+      .delete(locations)
+      .where(eq(locations.id, id))
+      .returning({ id: locations.id });
+    
+    // Check if any rows were actually deleted
+    return result.length > 0;
   }
 
   // ============================================

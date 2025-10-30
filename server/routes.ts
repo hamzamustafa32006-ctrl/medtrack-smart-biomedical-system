@@ -222,6 +222,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete facility
+  app.delete("/api/facilities/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const success = await storage.deleteFacility(id, userId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Facility not found" });
+      }
+      
+      res.json({ message: "Facility deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting facility:", error);
+      res.status(500).json({ message: "Failed to delete facility" });
+    }
+  });
+
   // ============================================
   // Location routes
   // ============================================
@@ -278,6 +296,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error updating location:", error);
       res.status(500).json({ message: "Failed to update location" });
+    }
+  });
+
+  // Delete location
+  app.delete("/api/locations/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const success = await storage.deleteLocation(id, userId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Location not found" });
+      }
+      
+      res.json({ message: "Location deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting location:", error);
+      res.status(500).json({ message: "Failed to delete location" });
     }
   });
 

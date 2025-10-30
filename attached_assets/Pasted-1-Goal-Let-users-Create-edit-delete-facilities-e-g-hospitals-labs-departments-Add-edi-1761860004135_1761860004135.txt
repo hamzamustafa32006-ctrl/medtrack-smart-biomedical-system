@@ -1,0 +1,159 @@
+1. Goal
+Let users:
+Create / edit / delete facilities (e.g., hospitals, labs, departments).
+Add / edit / delete locations under each facility (e.g., “Radiology Room 2”).
+Link each equipment item to a specific facility and location.
+Filter / report / manage maintenance tasks by facility and location.
+🧱 2. Backend Implementation
+📘 Database Schema
+-- Facilities
+CREATE TABLE facilities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  address TEXT,
+  contact_person TEXT,
+  phone TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Locations
+CREATE TABLE locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id UUID REFERENCES facilities(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  floor TEXT,
+  room TEXT,
+  department TEXT,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (facility_id, name)
+);
+
+-- Extend Equipment table
+ALTER TABLE equipment
+  ADD COLUMN facility_id UUID REFERENCES facilities(id),
+  ADD COLUMN location_id UUID REFERENCES locations(id);
+🧩 API Endpoints (REST)
+Facilities
+Method	Endpoint	Description
+GET	/facilities	Get all facilities
+POST	/facilities	Create facility
+PATCH	/facilities/:id	Edit facility
+DELETE	/facilities/:id	Delete facility (cascade locations)
+GET	/facilities/:id/locations	Get all locations under facility
+Locations
+Method	Endpoint	Description
+POST	/facilities/:facility_id/locations	Add new location
+PATCH	/locations/:id	Edit location
+DELETE	/locations/:id	Delete location
+Example JSON Payloads
+POST /facilities
+{
+  "name": "AASU University Hospital",
+  "code": "AASU-HOSP",
+  "address": "Kuwait City, Block 4",
+  "contact_person": "Eng. Hamza Ismail",
+  "phone": "+965-99999999"
+}
+POST /facilities/:facility_id/locations
+{
+  "name": "Radiology Department",
+  "floor": "1",
+  "room": "B12",
+  "department": "Imaging"
+}
+Example Express.js Controllers
+// facilityController.js
+export const getAll = async (req, res) => {
+  const facilities = await db.query("SELECT * FROM facilities ORDER BY name");
+  res.json(facilities.rows);
+};
+
+export const create = async (req, res) => {
+  const { name, code, address, contact_person, phone } = req.body;
+  const facility = await db.query(
+    "INSERT INTO facilities (name, code, address, contact_person, phone) VALUES ($1,$2,$3,$4,$5) RETURNING *",
+    [name, code, address, contact_person, phone]
+  );
+  res.status(201).json(facility.rows[0]);
+};
+// locationController.js
+export const listByFacility = async (req, res) => {
+  const { facilityId } = req.params;
+  const result = await db.query(
+    "SELECT * FROM locations WHERE facility_id=$1 ORDER BY name",
+    [facilityId]
+  );
+  res.json(result.rows);
+};
+
+export const create = async (req, res) => {
+  const { facilityId } = req.params;
+  const { name, floor, room, department, notes } = req.body;
+  const result = await db.query(
+    "INSERT INTO locations (facility_id, name, floor, room, department, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
+    [facilityId, name, floor, room, department, notes]
+  );
+  res.status(201).json(result.rows[0]);
+};
+💻 3. Frontend Functionality (React)
+🔹 Facility Management Page
+List all facilities in a table.
+“Add Facility” button → modal form (name, code, address, etc.).
+Edit & delete actions inline.
+Each row has “View Locations” button.
+🔹 Location Management Page
+Shows all locations for selected facility.
+“Add Location” modal → name, floor, room, department.
+Inline edit & delete.
+Display count of linked equipment.
+🔹 Equipment Form Integration
+Add Facility & Location dropdowns with dynamic filtering.
+<Select onChange={setFacilityId}>
+  <option value="">Select Facility</option>
+  {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+</Select>
+
+<Select onChange={setLocationId} disabled={!facilityId}>
+  <option value="">Select Location</option>
+  {locations.filter(l => l.facility_id === facilityId)
+    .map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+</Select>
+Optional inline “+ Add Location” modal for quick entry.
+🔒 4. Permissions
+Role	Permissions
+Admin	Full facility + location management
+Supervisor	Create/edit locations
+Technician	View-only access
+Implement via middleware or API guards.
+📊 5. Filtering & Reporting
+Once linked:
+Equipment list filters by facility_id / location_id.
+Maintenance reports group tasks by facility and location.
+Facility dashboard shows metrics:
+Total equipment
+Active alerts
+Overdue maintenance
+Example:
+SELECT f.name AS facility, COUNT(e.id) AS total_equipment,
+  SUM(CASE WHEN t.status='Overdue' THEN 1 ELSE 0 END) AS overdue_tasks
+FROM equipment e
+JOIN facilities f ON e.facility_id = f.id
+LEFT JOIN maintenance_tasks t ON t.equipment_id = e.id
+GROUP BY f.name;
+✅ 6. Testing Checklist
+Test	Expected
+Create new facility	Appears in facility list
+Add locations	Visible under correct facility
+Assign equipment	Saved with correct facility/location
+Delete facility	Cascades and removes its locations
+Filter equipment/tasks	Returns only items from selected facility/location
+Role restrictions	Supervisors/Technicians can’t delete facilities
+🚀 7. Future Extensions
+Facility map view (with clickable departments).
+QR code per location for quick lookup.
+CSV import/export for bulk facility setup.
+Facility-level notifications (e.g., “3 devices overdue in Radiology”).

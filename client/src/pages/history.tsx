@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, History as HistoryIcon, CheckCircle, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { formatDate } from "@/lib/dateUtils";
 import type { MaintenanceRecord, Equipment } from "@shared/schema";
 import { insertMaintenanceRecordSchema, type InsertMaintenanceRecord } from "@shared/schema";
 import { z } from "zod";
@@ -282,7 +282,7 @@ export default function HistoryPage() {
                         )}
                       </div>
                       <CardDescription>
-                        {format(new Date(record.maintenanceDate), "MMMM d, yyyy")}
+                        {formatDate(record.maintenanceDate)}
                         {record.maintenanceType && ` • ${record.maintenanceType}`}
                       </CardDescription>
                     </div>
@@ -301,7 +301,7 @@ export default function HistoryPage() {
                     {record.nextScheduledDate && (
                       <div className="flex items-center gap-1">
                         <Clock className="w-4 h-4" />
-                        <span>Next: {format(new Date(record.nextScheduledDate), "MMM d, yyyy")}</span>
+                        <span>Next: {formatDate(record.nextScheduledDate)}</span>
                       </div>
                     )}
                   </div>
