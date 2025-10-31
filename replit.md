@@ -97,11 +97,19 @@ Preferred communication style: Simple, everyday language.
 **Automated Alert Generation** (`server/alertService.ts`)
 - Daily scheduler using node-cron runs at midnight Kuwait time (Asia/Kuwait UTC+3)
 - Automatically scans all active equipment with `nextDueDate` set
-- Alert severity logic:
-  - **Critical**: Maintenance overdue (≤0 days past due date)
-  - **Warning**: Maintenance due in exactly 7 days
-  - Skips equipment with no due date or status 'Decommissioned'
-- Prevents duplicate alerts by checking for existing open alerts
+- **Three-tier alert severity system** with automatic escalation:
+  - **Info** (8-14 days): Early warning for upcoming maintenance - allows proactive scheduling
+  - **Warning** (1-7 days): Maintenance due soon - requires action planning
+  - **Critical** (≤0 days): Overdue maintenance - immediate action required
+- **Production-grade UPSERT pattern**:
+  - Uses UNIQUE constraint on `(entityType, entityId, userId)` WHERE status IN ('open', 'escalated')
+  - Atomic insert-or-update with Postgres `xmax = 0` detection for accurate metrics
+  - Automatically upgrades alert severity as due dates approach (Info → Warning → Critical)
+  - Prevents duplicate active alerts per equipment
+  - Handles concurrent execution (scheduler + manual triggers) without race conditions
+- **Accurate metrics tracking**:
+  - Reports `created` (new alerts), `updated` (severity upgrades), `skipped` separately
+  - Returns: `{ success, message, created, updated, skipped, errors }`
 - Auto-resolves equipment alerts when maintenance is completed
 - Comprehensive logging with [SCHEDULER] prefix for monitoring
 - Error handling prevents scheduler crashes
