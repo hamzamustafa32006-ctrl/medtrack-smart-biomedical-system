@@ -1148,6 +1148,7 @@ export class DatabaseStorage implements IStorage {
         equipmentName: equipment.name,
         equipmentIdCode: equipment.equipmentId,
         equipmentType: equipment.type,
+        equipmentNextDueDate: equipment.nextDueDate,
         taskId: maintenanceTasks.id,
         taskDueDate: maintenanceTasks.dueDate,
         taskStatus: maintenanceTasks.status,
