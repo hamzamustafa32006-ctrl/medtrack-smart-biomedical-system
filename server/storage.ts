@@ -979,6 +979,12 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(maintenanceTasks.id, id))
       .returning();
+
+    // Auto-resolve related alerts
+    const { autoResolveTaskAlerts, autoResolveEquipmentAlerts } = await import("./alertService");
+    await autoResolveTaskAlerts(task.id, userId);
+    await autoResolveEquipmentAlerts(task.equipmentId, userId);
+
     return task;
   }
 

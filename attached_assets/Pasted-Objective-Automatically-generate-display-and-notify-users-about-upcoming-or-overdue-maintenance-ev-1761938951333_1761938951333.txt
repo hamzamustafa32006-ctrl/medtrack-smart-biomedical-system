@@ -1,0 +1,151 @@
+Objective
+Automatically generate, display, and notify users about upcoming or overdue maintenance events for equipment.
+🎯 Key Capabilities
+Detect when a piece of equipment is due for maintenance.
+Create alerts automatically (daily background job).
+Display alerts in-app (color-coded and actionable).
+Send optional notifications (email / SMS / push).
+Resolve or acknowledge alerts when tasks are completed.
+🧱 2. Database Design
+New Table: maintenance_alerts
+CREATE TABLE maintenance_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id),
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  severity TEXT CHECK (severity IN ('Info','Warning','Critical')) DEFAULT 'Info',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  due_date DATE,
+  triggered_at TIMESTAMP DEFAULT NOW(),
+  status TEXT CHECK (status IN ('Open','Acknowledged','Resolved')) DEFAULT 'Open',
+  acknowledged_by UUID REFERENCES users(id),
+  acknowledged_at TIMESTAMP,
+  resolved_at TIMESTAMP
+);
+🧠 3. Alert Logic (Backend)
+Step 1: Daily Maintenance Checker (Cron Job)
+Runs every night to scan all equipment and generate alerts if needed.
+from datetime import date, timedelta
+from db import query, execute
+
+def generate_alerts():
+    today = date.today()
+    rows = query("""
+      SELECT id, name, facility_id, location_id, next_due_date
+      FROM equipment
+      WHERE status != 'Decommissioned'
+    """)
+
+    for e in rows:
+        days_left = (e["next_due_date"] - today).days
+        if days_left == 7:
+            severity = "Warning"
+            title = f"Maintenance due soon for {e['name']}"
+            message = f"{e['name']} at facility {e['facility_id']} is due in 7 days."
+        elif days_left <= 0:
+            severity = "Critical"
+            title = f"Overdue maintenance: {e['name']}"
+            message = f"{e['name']} maintenance is {abs(days_left)} day(s) overdue!"
+        else:
+            continue
+
+        # Avoid duplicate alert
+        existing = query("""
+          SELECT id FROM maintenance_alerts
+          WHERE equipment_id = %s AND status='Open'
+        """, [e["id"]])
+        if not existing:
+            execute("""
+              INSERT INTO maintenance_alerts (equipment_id, facility_id, location_id,
+                severity, title, message, due_date)
+              VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """, [e["id"], e["facility_id"], e["location_id"], severity, title, message, e["next_due_date"]])
+✅ Runs daily → creates alerts only once per equipment until resolved.
+✅ You can use Celery / BullMQ / CronJob to schedule this logic.
+🔁 4. Alert Lifecycle
+State	Description	Trigger
+Open	Newly generated, awaiting review	Created by scheduler
+Acknowledged	User marked as seen	User clicks “Acknowledge”
+Resolved	Task completed	Linked maintenance task closed
+🔔 5. API Endpoints
+Method	Endpoint	Description
+GET	/alerts	List all open alerts
+POST	/alerts/:id/ack	Acknowledge alert
+POST	/alerts/:id/resolve	Mark alert as resolved
+GET	/alerts?facility_id=&severity=	Filter alerts by facility, severity, or status
+Example response:
+[
+  {
+    "id": "al-101",
+    "equipment_name": "Ventilator V900",
+    "facility_name": "AASU Hospital",
+    "location_name": "ICU Room 3",
+    "severity": "Critical",
+    "message": "Overdue maintenance by 2 days.",
+    "due_date": "2025-11-05",
+    "status": "Open"
+  }
+]
+💻 6. Frontend UI Design
+🔹 A. Alert Badge (Navbar)
+A bell icon showing unread count:
+<NotificationBell count={alerts.filter(a => a.status === "Open").length} />
+🔹 B. Alert Center (Drawer or Modal)
+Displays all alerts sorted by severity and due date.
+<Drawer title="Maintenance Alerts" placement="right" open={showAlerts} onClose={close}>
+  {alerts.map(a => (
+    <div key={a.id}
+         className={`border-l-4 rounded-xl p-3 mb-2
+           ${a.severity==='Critical'?'border-red-500 bg-red-50':
+             a.severity==='Warning'?'border-yellow-500 bg-yellow-50':'border-blue-500 bg-blue-50'}`}>
+      <h4 className="font-semibold">{a.title}</h4>
+      <p className="text-sm text-gray-600">{a.message}</p>
+      <p className="text-xs text-gray-500 mt-1">
+        {a.facility_name} • {a.location_name} • Due: {formatDate(a.due_date)}
+      </p>
+      <div className="flex gap-2 mt-2">
+        {a.status==='Open' && <button onClick={() => ackAlert(a.id)} className="btn-sm">Acknowledge</button>}
+        <button onClick={() => openEquipment(a.equipment_id)} className="btn-sm btn-outline">View Equipment</button>
+      </div>
+    </div>
+  ))}
+</Drawer>
+🔹 C. Alert Page (Full Table View)
+Columns:
+Severity	Equipment	Facility	Location	Due Date	Status	Actions
+🟥 Critical	Ventilator V900	AASU Hospital	ICU Room 3	Nov 5	Open	Acknowledge / Resolve
+Filter bar at the top:
+Severity (Critical/Warning/Info)
+Facility
+Status (Open/Resolved)
+📣 7. User Notifications
+In-App Toast
+When a new alert is generated (via WebSocket):
+toast.warning(`Overdue maintenance: ${alert.equipment_name}`);
+Optional: Email or Push
+Email: Daily summary of open alerts.
+Push (PWA): Immediate for Critical alerts.
+SMS: For escalated alerts.
+🧩 8. Integration with Maintenance Tasks
+When a technician completes a maintenance task:
+UPDATE maintenance_alerts
+SET status='Resolved', resolved_at=NOW()
+WHERE equipment_id=:equipment_id AND status='Open';
+✅ Ensures no stale alerts remain after task completion.
+📊 9. Dashboard Widget
+On the main dashboard, add summary cards:
+Metric	Example
+🔴 Critical Alerts	3
+🟡 Upcoming Maintenance	5
+🟢 Resolved This Week	12
+Add small chart:
+X-axis = Facilities
+Y-axis = Count of open alerts
+Color = Severity level
+✅ 10. Acceptance Criteria
+ Alerts automatically generated daily for due or overdue equipment.
+ Alerts displayed with severity color and details.
+ Acknowledge / Resolve actions update status in real time.
+ Alerts auto-resolve when maintenance tasks close.
+ Dashboard shows alert counts and severity charts.

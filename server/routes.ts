@@ -641,6 +641,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generate maintenance alerts (manual trigger or can be called by cron)
+  app.post("/api/alerts/generate", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { generateMaintenanceAlerts } = await import("./alertService");
+      
+      // Generate alerts for this user only
+      const result = await generateMaintenanceAlerts(userId);
+      
+      res.json({
+        success: true,
+        message: `Alert generation complete: ${result.created} created, ${result.skipped} skipped`,
+        ...result,
+      });
+    } catch (error) {
+      console.error("Error generating alerts:", error);
+      res.status(500).json({ message: "Failed to generate alerts" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
