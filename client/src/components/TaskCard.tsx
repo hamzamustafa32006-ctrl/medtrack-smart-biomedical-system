@@ -10,15 +10,15 @@ interface TaskCardProps {
   task: {
     id: string;
     equipmentName: string;
-    equipmentIdCode?: string;
+    equipmentIdCode?: string | null;
     facilityName: string;
-    locationName?: string;
+    locationName?: string | null;
     status: TaskStatusType | string;
     dueDate: Date | string;
     priority: string;
-    assignedToUserEmail?: string;
-    assignedToUserFirstName?: string;
-    assignedToUserLastName?: string;
+    assignedToUserEmail?: string | null;
+    assignedToUserFirstName?: string | null;
+    assignedToUserLastName?: string | null;
     checklistResult?: any;
     planChecklistJson?: any;
   };

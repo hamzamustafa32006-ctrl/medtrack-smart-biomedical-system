@@ -51,6 +51,7 @@ export interface IStorage {
   deleteFacility(id: string, userId: string): Promise<boolean>;
   
   // Location operations
+  getAllLocations(userId: string): Promise<Location[]>;
   getLocations(facilityId: string, userId?: string): Promise<Location[]>;
   getLocationById(id: string, userId?: string): Promise<Location | undefined>;
   createLocation(data: InsertLocation, userId: string): Promise<Location>;
@@ -193,6 +194,25 @@ export class DatabaseStorage implements IStorage {
   // ============================================
   // Location operations
   // ============================================
+
+  async getAllLocations(userId: string): Promise<Location[]> {
+    // Get all locations across all facilities owned by the user
+    return await db
+      .select({ 
+        id: locations.id,
+        name: locations.name,
+        facilityId: locations.facilityId,
+        floor: locations.floor,
+        room: locations.room,
+        notes: locations.notes,
+        createdAt: locations.createdAt,
+        updatedAt: locations.updatedAt,
+      })
+      .from(locations)
+      .innerJoin(facilities, eq(facilities.id, locations.facilityId))
+      .where(eq(facilities.userId, userId))
+      .orderBy(desc(locations.createdAt));
+  }
 
   async getLocations(facilityId: string, userId?: string): Promise<Location[]> {
     // Verify user owns the facility if userId is provided

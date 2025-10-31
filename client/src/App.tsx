@@ -9,6 +9,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import Landing from "@/pages/landing";
 import Home from "@/pages/home";
+import Tasks from "@/pages/tasks";
 import Facilities from "@/pages/facilities";
 import Equipment from "@/pages/equipment";
 import History from "@/pages/history";
@@ -29,6 +30,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/tasks" component={Tasks} />
       <Route path="/facilities" component={Facilities} />
       <Route path="/equipment" component={Equipment} />
       <Route path="/history" component={History} />
