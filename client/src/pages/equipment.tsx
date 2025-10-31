@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +19,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
-import type { Equipment, Contract, Facility, Location, EquipmentStatus, EquipmentCriticality } from "@shared/schema";
+import type { Equipment, Contract, Facility, Location, EquipmentStatus, EquipmentCriticality, MaintenanceRecord } from "@shared/schema";
 import { insertEquipmentSchema, insertContractSchema, insertLocationSchema, type InsertEquipment, type InsertContract, type InsertLocation } from "@shared/schema";
 import { z } from "zod";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -62,6 +63,19 @@ function CriticalityBadge({ criticality }: { criticality: string | null }) {
   return <Badge variant={config.variant} className={config.className} data-testid={`badge-criticality-${criticality.toLowerCase()}`}>{criticality}</Badge>;
 }
 
+// Helper component: Info Item for displaying label-value pairs
+function InfoItem({ label, value, icon: Icon, testId }: { label: string; value: React.ReactNode; icon?: any; testId?: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {Icon && <Icon className="w-3.5 h-3.5" />}
+        <span>{label}</span>
+      </div>
+      <div className="text-sm font-medium" data-testid={testId}>{value}</div>
+    </div>
+  );
+}
+
 type SortField = "name" | "type" | "facility" | "status" | "criticality" | "nextMaintenance" | "installDate";
 type SortDirection = "asc" | "desc";
 
@@ -90,6 +104,13 @@ export default function EquipmentPage() {
 
   const { data: facilities } = useQuery<Facility[]>({
     queryKey: ["/api/facilities"],
+    staleTime: 0,
+  });
+
+  // Fetch maintenance records for selected equipment
+  const { data: maintenanceRecords } = useQuery<MaintenanceRecord[]>({
+    queryKey: ["/api/maintenance-records"],
+    enabled: !!selectedEquipment,
     staleTime: 0,
   });
 
@@ -1010,214 +1031,296 @@ export default function EquipmentPage() {
 
       {/* Equipment Detail Drawer */}
       <Sheet open={detailDrawerOpen} onOpenChange={setDetailDrawerOpen}>
-        <SheetContent className="sm:max-w-[600px] overflow-y-auto" data-testid="sheet-equipment-detail">
+        <SheetContent className="sm:max-w-[700px] overflow-y-auto" data-testid="sheet-equipment-detail">
           {selectedEquipment && (
             <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center justify-between gap-4">
-                  <span data-testid="text-detail-equipment-name">{selectedEquipment.name}</span>
-                  <div className="flex gap-2">
+              {/* Header Section */}
+              <SheetHeader className="space-y-4 pb-6 border-b">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <SheetTitle className="text-2xl font-bold mb-2" data-testid="text-detail-equipment-name">
+                      {selectedEquipment.name}
+                    </SheetTitle>
+                    <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+                      {selectedEquipment.type && <span data-testid="text-detail-equipment-type">{selectedEquipment.type}</span>}
+                      {selectedEquipment.manufacturer && (
+                        <>
+                          <span>•</span>
+                          <span>{selectedEquipment.manufacturer}</span>
+                        </>
+                      )}
+                      {selectedEquipment.model && (
+                        <>
+                          <span>•</span>
+                          <span>{selectedEquipment.model}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
                     <StatusBadge status={selectedEquipment.status} />
                     <CriticalityBadge criticality={selectedEquipment.criticality} />
                   </div>
-                </SheetTitle>
-                <SheetDescription data-testid="text-detail-equipment-type">
-                  {selectedEquipment.type || "Equipment Details"}
-                </SheetDescription>
+                </div>
               </SheetHeader>
 
-              <div className="mt-6 space-y-6">
-                {/* Identification Section */}
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 text-foreground">Identification</h3>
-                  <div className="space-y-2 text-sm">
+              {/* Tabbed Content */}
+              <Tabs defaultValue="overview" className="mt-6">
+                <TabsList className="grid w-full grid-cols-4 mb-6">
+                  <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+                  <TabsTrigger value="maintenance" data-testid="tab-maintenance">Maintenance</TabsTrigger>
+                  <TabsTrigger value="location" data-testid="tab-location">Location</TabsTrigger>
+                  <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
+                </TabsList>
+
+                {/* Overview Tab */}
+                <TabsContent value="overview" className="space-y-6">
+                  <div className="grid grid-cols-2 gap-6">
                     {selectedEquipment.equipmentId && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Equipment ID:</span>
-                        <span className="font-medium" data-testid="text-detail-equipment-id">{selectedEquipment.equipmentId}</span>
-                      </div>
-                    )}
-                    {selectedEquipment.manufacturer && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Manufacturer:</span>
-                        <span className="font-medium" data-testid="text-detail-manufacturer">{selectedEquipment.manufacturer}</span>
-                      </div>
-                    )}
-                    {selectedEquipment.model && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Model:</span>
-                        <span className="font-medium" data-testid="text-detail-model">{selectedEquipment.model}</span>
-                      </div>
+                      <InfoItem label="Equipment ID" value={selectedEquipment.equipmentId} icon={FileText} testId="text-detail-equipment-id" />
                     )}
                     {selectedEquipment.serial && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Serial:</span>
-                        <span className="font-medium" data-testid="text-detail-serial">{selectedEquipment.serial}</span>
-                      </div>
+                      <InfoItem label="Serial Number" value={selectedEquipment.serial} icon={Package} testId="text-detail-serial" />
                     )}
-                    {selectedEquipment.barcode && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Barcode:</span>
-                        <span className="font-medium" data-testid="text-detail-barcode">{selectedEquipment.barcode}</span>
-                      </div>
+                    {selectedEquipment.criticality && (
+                      <InfoItem label="Criticality" value={<CriticalityBadge criticality={selectedEquipment.criticality} />} icon={AlertTriangle} />
                     )}
-                  </div>
-                </div>
-
-                {/* Location Section */}
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 text-foreground">Location</h3>
-                  <div className="space-y-2 text-sm">
-                    {selectedEquipment.facilityId && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Facility:</span>
-                        <span className="font-medium" data-testid="text-detail-facility">
-                          {facilities?.find(f => f.id === selectedEquipment.facilityId)?.name || "—"}
-                        </span>
-                      </div>
-                    )}
-                    {selectedEquipment.locationId && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Location:</span>
-                        <span className="font-medium" data-testid="text-detail-location">
-                          {(() => {
-                            const loc = locations?.find(l => l.id === selectedEquipment.locationId);
-                            if (!loc) return "—";
-                            const parts = [loc.name];
-                            if (loc.floor) parts.push(`Floor ${loc.floor}`);
-                            if (loc.room) parts.push(`Room ${loc.room}`);
-                            return parts.join(", ");
-                          })()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Dates Section */}
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 text-foreground">Important Dates</h3>
-                  <div className="space-y-2 text-sm">
                     {selectedEquipment.installDate && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Install Date:</span>
-                        <span className="font-medium" data-testid="text-detail-install-date">
-                          {formatDate(new Date(selectedEquipment.installDate))}
-                        </span>
-                      </div>
+                      <InfoItem label="Install Date" value={formatDate(new Date(selectedEquipment.installDate))} icon={Calendar} testId="text-detail-install-date" />
                     )}
                     {selectedEquipment.purchaseDate && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Purchase Date:</span>
-                        <span className="font-medium" data-testid="text-detail-purchase-date">
-                          {formatDate(new Date(selectedEquipment.purchaseDate))}
-                        </span>
-                      </div>
+                      <InfoItem label="Purchase Date" value={formatDate(new Date(selectedEquipment.purchaseDate))} icon={Calendar} testId="text-detail-purchase-date" />
                     )}
                     {selectedEquipment.warrantyExpiryDate && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Warranty Expiry:</span>
-                        <span className="font-medium" data-testid="text-detail-warranty-expiry">
-                          {formatDate(new Date(selectedEquipment.warrantyExpiryDate))}
-                        </span>
-                      </div>
+                      <InfoItem label="Warranty Expiry" value={formatDate(new Date(selectedEquipment.warrantyExpiryDate))} icon={Clock} testId="text-detail-warranty-expiry" />
+                    )}
+                    {selectedEquipment.barcode && (
+                      <InfoItem label="Barcode" value={selectedEquipment.barcode} testId="text-detail-barcode" />
                     )}
                   </div>
-                </div>
 
-                {/* Maintenance Section */}
-                <div>
-                  <h3 className="text-sm font-semibold mb-3 text-foreground">Maintenance Schedule</h3>
-                  <div className="space-y-2 text-sm">
-                    {selectedEquipment.maintenanceFrequencyDays && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Frequency:</span>
-                        <span className="font-medium" data-testid="text-detail-frequency">
-                          Every {selectedEquipment.maintenanceFrequencyDays} days
-                        </span>
-                      </div>
-                    )}
-                    {selectedEquipment.lastMaintenanceDate && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Last Maintenance:</span>
-                        <span className="font-medium" data-testid="text-detail-last-maintenance">
-                          {formatDate(new Date(selectedEquipment.lastMaintenanceDate))}
-                        </span>
-                      </div>
-                    )}
-                    {(() => {
-                      const nextDate = getNextMaintenanceDate(selectedEquipment);
-                      if (!nextDate) return null;
-                      const daysUntil = differenceInDays(nextDate, new Date());
-                      return (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Next Maintenance:</span>
-                          <div className="text-right">
-                            <div className="font-medium" data-testid="text-detail-next-maintenance">
-                              {formatDate(nextDate)}
+                  {/* Service Contracts */}
+                  {contracts && getEquipmentContracts(selectedEquipment.id).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-foreground">Service Contracts</h3>
+                      <div className="space-y-3">
+                        {getEquipmentContracts(selectedEquipment.id).map((contract) => (
+                          <Card key={contract.id} className="p-4">
+                            <div className="space-y-1">
+                              <div className="font-medium" data-testid={`text-contract-vendor-${contract.id}`}>
+                                {contract.vendorName}
+                              </div>
+                              {contract.contractType && (
+                                <div className="text-sm text-muted-foreground">{contract.contractType}</div>
+                              )}
+                              <div className="text-xs text-muted-foreground">
+                                {formatDate(new Date(contract.startDate))} - {formatDate(new Date(contract.endDate))}
+                              </div>
                             </div>
-                            <div className={`text-xs ${daysUntil < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {daysUntil < 0 ? `${Math.abs(daysUntil)} days overdue` : `in ${daysUntil} days`}
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedEquipment.notes && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-foreground">Notes</h3>
+                      <Card className="p-4">
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-detail-notes">
+                          {selectedEquipment.notes}
+                        </p>
+                      </Card>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Maintenance & Alerts Tab */}
+                <TabsContent value="maintenance" className="space-y-4">
+                  {(() => {
+                    const nextDate = getNextMaintenanceDate(selectedEquipment);
+                    const daysUntil = nextDate ? differenceInDays(nextDate, new Date()) : null;
+                    
+                    return (
+                      <>
+                        {nextDate && (
+                          <Card className="p-4">
+                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                              <Wrench className="w-4 h-4" />
+                              Next Maintenance
+                            </h3>
+                            <div className="space-y-2">
+                              <div className="text-2xl font-bold" data-testid="text-detail-next-maintenance">
+                                {formatDate(nextDate)}
+                              </div>
+                              <div className={`text-sm font-medium ${daysUntil! < 0 ? "text-destructive" : daysUntil! <= 7 ? "text-orange-600" : "text-muted-foreground"}`}>
+                                {daysUntil! < 0 ? `${Math.abs(daysUntil!)} days overdue` : `in ${daysUntil} days`}
+                              </div>
                             </div>
+                          </Card>
+                        )}
+
+                        {selectedEquipment.lastMaintenanceDate && (
+                          <Card className="p-4">
+                            <h3 className="text-sm font-semibold mb-3">Last Maintenance</h3>
+                            <div className="text-sm" data-testid="text-detail-last-maintenance">
+                              Completed on {formatDate(new Date(selectedEquipment.lastMaintenanceDate))}
+                            </div>
+                          </Card>
+                        )}
+
+                        {selectedEquipment.maintenanceFrequencyDays && (
+                          <Card className="p-4">
+                            <h3 className="text-sm font-semibold mb-3">Maintenance Schedule</h3>
+                            <div className="text-sm" data-testid="text-detail-frequency">
+                              Every {selectedEquipment.maintenanceFrequencyDays} days
+                            </div>
+                          </Card>
+                        )}
+
+                        <Card className="p-4">
+                          <h3 className="text-sm font-semibold mb-3">Active Alerts</h3>
+                          <p className="text-sm text-muted-foreground">No active alerts</p>
+                        </Card>
+                      </>
+                    );
+                  })()}
+                </TabsContent>
+
+                {/* Location & Facility Tab */}
+                <TabsContent value="location" className="space-y-4">
+                  <Card className="p-4">
+                    <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                      <Building2 className="w-4 h-4" />
+                      Facility Information
+                    </h3>
+                    <div className="space-y-3">
+                      {selectedEquipment.facilityId && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Facility</div>
+                          <div className="text-sm font-medium" data-testid="text-detail-facility">
+                            {facilities?.find(f => f.id === selectedEquipment.facilityId)?.name || "—"}
                           </div>
                         </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                {/* Contracts Section */}
-                {contracts && getEquipmentContracts(selectedEquipment.id).length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3 text-foreground">Service Contracts</h3>
-                    <div className="space-y-3">
-                      {getEquipmentContracts(selectedEquipment.id).map((contract) => (
-                        <Card key={contract.id} className="p-3">
-                          <div className="space-y-1 text-sm">
-                            <div className="font-medium" data-testid={`text-contract-vendor-${contract.id}`}>
-                              {contract.vendorName}
+                      )}
+                      {selectedEquipment.locationId && (() => {
+                        const loc = locations?.find(l => l.id === selectedEquipment.locationId);
+                        if (!loc) return null;
+                        return (
+                          <>
+                            <div>
+                              <div className="text-xs text-muted-foreground mb-1">Department/Area</div>
+                              <div className="text-sm font-medium" data-testid="text-detail-location">{loc.name}</div>
                             </div>
-                            {contract.contractType && (
-                              <div className="text-muted-foreground">{contract.contractType}</div>
+                            {loc.floor && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Floor</div>
+                                <div className="text-sm font-medium">{loc.floor}</div>
+                              </div>
                             )}
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                              <span>
-                                {formatDate(new Date(contract.startDate))} - {formatDate(new Date(contract.endDate))}
-                              </span>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
+                            {loc.room && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Room</div>
+                                <div className="text-sm font-medium">{loc.room}</div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
-                  </div>
-                )}
+                  </Card>
+                </TabsContent>
 
-                {/* Notes Section */}
-                {selectedEquipment.notes && (
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3 text-foreground">Notes</h3>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-detail-notes">
-                      {selectedEquipment.notes}
-                    </p>
-                  </div>
-                )}
+                {/* History Tab */}
+                <TabsContent value="history" className="space-y-4">
+                  {/* Maintenance History Table */}
+                  <Card className="p-4">
+                    <h3 className="text-sm font-semibold mb-4">Maintenance History</h3>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Date</TableHead>
+                            <TableHead className="text-xs">Type</TableHead>
+                            <TableHead className="text-xs">Result</TableHead>
+                            <TableHead className="text-xs">Performed By</TableHead>
+                            <TableHead className="text-xs">Notes</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(() => {
+                            const equipmentRecords = maintenanceRecords?.filter(
+                              (record) => record.equipmentId === selectedEquipment.id
+                            ) || [];
 
-                {/* Action Buttons */}
-                <div className="pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setDetailDrawerOpen(false);
-                      openContractDialog(selectedEquipment);
-                    }}
-                    className="w-full"
-                    data-testid="button-add-contract-from-detail"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Service Contract
-                  </Button>
-                </div>
-              </div>
+                            if (equipmentRecords.length === 0) {
+                              return (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-center py-8 text-sm text-muted-foreground">
+                                    No maintenance records available
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+
+                            return equipmentRecords
+                              .sort((a, b) => new Date(b.maintenanceDate).getTime() - new Date(a.maintenanceDate).getTime())
+                              .map((record) => (
+                                <TableRow key={record.id}>
+                                  <TableCell className="text-sm">
+                                    {formatDate(new Date(record.maintenanceDate))}
+                                  </TableCell>
+                                  <TableCell className="text-sm">{record.maintenanceType || "—"}</TableCell>
+                                  <TableCell className="text-sm">
+                                    {record.completed ? (
+                                      <Badge variant="outline" className="border-green-600 text-green-700 dark:text-green-400">
+                                        Completed
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                        Pending
+                                      </Badge>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-sm">{record.performedBy || "—"}</TableCell>
+                                  <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
+                                    {record.notes || record.description || "—"}
+                                  </TableCell>
+                                </TableRow>
+                              ));
+                          })()}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </Card>
+
+                  {/* Equipment Notes */}
+                  {selectedEquipment.notes && (
+                    <Card className="p-4">
+                      <h3 className="text-sm font-semibold mb-3">Equipment Notes</h3>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-detail-notes">
+                        {selectedEquipment.notes}
+                      </p>
+                    </Card>
+                  )}
+
+                  {/* Quick Actions */}
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDetailDrawerOpen(false);
+                        openContractDialog(selectedEquipment);
+                      }}
+                      className="w-full"
+                      data-testid="button-add-contract-from-detail"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Service Contract
+                    </Button>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </SheetContent>

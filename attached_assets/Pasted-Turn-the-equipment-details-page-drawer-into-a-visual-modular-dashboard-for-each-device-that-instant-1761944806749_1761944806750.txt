@@ -1,0 +1,193 @@
+Turn the equipment details page/drawer into a visual, modular dashboard for each device that instantly answers:
+What is this equipment? (Identity, type, model)
+Where is it located? (Facility, department, room)
+What’s its condition? (Status, criticality, next maintenance)
+What has been done before? (History, logs, alerts)
+Who maintains it? (Assigned engineers)
+🧱 2. Layout Overview
+🔹 Recommended Layout Structure
+Header: Equipment title + status badge
+└── Tabs / Sections:
+     1️⃣ Overview
+     2️⃣ Maintenance & Alerts
+     3️⃣ Location & Facility
+     4️⃣ History & Attachments
+Example (React Page Skeleton)
+<div className="p-6 space-y-6">
+  <HeaderSection equipment={equipment} />
+  <Tabs
+    tabs={[
+      { id: 'overview', label: 'Overview', content: <OverviewTab data={equipment} /> },
+      { id: 'maintenance', label: 'Maintenance & Alerts', content: <MaintenanceTab data={equipment} /> },
+      { id: 'location', label: 'Location & Facility', content: <LocationTab data={equipment} /> },
+      { id: 'history', label: 'History & Files', content: <HistoryTab data={equipment} /> }
+    ]}
+  />
+</div>
+🎨 3. Section 1 — Header (Visual Identity)
+What to show:
+Equipment name + model + icon
+Status badge (color-coded)
+QR code button (opens mobile link)
+Quick summary (Type | Serial | Manufacturer)
+<div className="flex justify-between items-start border-b pb-3">
+  <div>
+    <h1 className="text-2xl font-bold">{equipment.name}</h1>
+    <p className="text-sm text-gray-500">{equipment.type} • {equipment.manufacturer} • {equipment.model}</p>
+  </div>
+  <div className="flex gap-2 items-center">
+    <StatusBadge status={equipment.status} />
+    <QrButton id={equipment.id} />
+  </div>
+</div>
+Color Scheme:
+Status	Color
+Active	🟢 Green
+Under Maintenance	🟡 Yellow
+Overdue	🔴 Red
+Decommissioned	⚫ Gray
+⚙️ 4. Section 2 — “Overview” Tab
+Focus on quick operational insights.
+Field	Description
+Equipment ID	Internal tracking code
+Serial No.	Manufacturer identifier
+Criticality	Low / Medium / High badge
+Purchase Date	e.g. 2023-06-10
+Warranty Expiry	e.g. 2026-06-10
+Vendor	Supplier contact info
+Example layout:
+<div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+  <InfoItem label="Equipment ID" value={equipment.equipment_id_code} />
+  <InfoItem label="Serial Number" value={equipment.serial_number} />
+  <InfoItem label="Criticality" value={<CriticalityBadge level={equipment.criticality} />} />
+  <InfoItem label="Purchase Date" value={formatDate(equipment.purchase_date)} />
+  <InfoItem label="Warranty Expiry" value={formatDate(equipment.warranty_expiry)} />
+  <InfoItem label="Vendor" value={equipment.vendor_name || '—'} />
+</div>
+✅ Use icons beside key fields for visual association.
+✅ Add progress indicator if warranty is near expiry.
+🔧 5. Section 3 — “Maintenance & Alerts” Tab
+Show:
+Next scheduled maintenance (countdown + date)
+Last maintenance done by
+Active alerts (if any)
+<div className="space-y-4">
+  <Card>
+    <h3 className="font-semibold mb-1">Next Maintenance</h3>
+    <p>{formatDate(equipment.next_due_date)} ({daysUntil(equipment.next_due_date)} days left)</p>
+  </Card>
+
+  <Card>
+    <h3 className="font-semibold mb-1">Recent Maintenance</h3>
+    <p>Last serviced by {equipment.last_technician} on {formatDate(equipment.last_maintenance_date)}</p>
+  </Card>
+
+  <Card>
+    <h3 className="font-semibold mb-1">Active Alerts</h3>
+    {equipment.alerts.length ? (
+      equipment.alerts.map(a => (
+        <AlertBadge key={a.id} severity={a.severity} message={a.message} />
+      ))
+    ) : (
+      <p className="text-sm text-gray-500">No active alerts 🎉</p>
+    )}
+  </Card>
+</div>
+✅ Critical alerts appear red and clickable → navigate to Alert Center.
+🏥 6. Section 4 — “Location & Facility” Tab
+Data:
+Field	Example
+Facility	AASU Hospital
+Department	Radiology
+Room	B-12
+Floor	1
+Facility Contact	Eng. Sarah Al-Harbi
+Enhancement:
+Add a mini map or floor schematic (optional static image or interactive SVG).
+Also display “Equipment Density” for that room (how many devices are located nearby).
+<LocationCard>
+  <h4 className="font-semibold">Facility</h4>
+  <p>{equipment.facility_name}</p>
+  <p>{equipment.location_name} — Room {equipment.room || 'N/A'}</p>
+</LocationCard>
+📜 7. Section 5 — “History & Files” Tab
+Combine historical maintenance and file attachments.
+A. Maintenance History Table
+Date	Technician	Result	Notes
+25-Oct-2025	Eng. Ahmad	Passed	Replaced filter
+25-Jul-2025	Eng. Layla	Failed	Calibration drift
+<Table>
+  <Thead>
+    <Tr><Th>Date</Th><Th>Technician</Th><Th>Result</Th><Th>Notes</Th></Tr>
+  </Thead>
+  <Tbody>
+    {equipment.maintenance_history.map(m => (
+      <Tr key={m.id}>
+        <Td>{formatDate(m.performed_at)}</Td>
+        <Td>{m.performed_by}</Td>
+        <Td><ResultBadge result={m.result} /></Td>
+        <Td>{m.notes}</Td>
+      </Tr>
+    ))}
+  </Tbody>
+</Table>
+B. Attachments
+List uploaded documents:
+<ul className="list-disc ml-4">
+  {equipment.attachments.map(a => (
+    <li key={a.id}>
+      <a href={a.url} className="text-blue-600 underline" target="_blank">{a.filename}</a>
+    </li>
+  ))}
+</ul>
+✅ Add a drag-and-drop uploader for manuals, calibration reports, etc.
+📊 8. Quick Stats Bar (optional footer widget)
+At the bottom of the page, add a quick summary strip:
+Metric	Value	Color
+Total Maintenances	14	Blue
+Avg. Days Between Service	90	Gray
+Downtime This Year	4 days	Orange
+Adds instant performance context per equipment.
+🔒 9. Permissions
+Role	Access
+Technician	Read + Upload attachments
+Supervisor	Edit metadata, assign technician
+Admin	Full CRUD + delete equipment
+⚙️ 10. API Response Enrichment
+Make sure your /equipment/:id endpoint returns all nested data in one response:
+{
+  "id": "eq-101",
+  "name": "Ventilator V900",
+  "type": "Life Support",
+  "manufacturer": "Medtronic",
+  "model": "V900",
+  "facility_name": "AASU Hospital",
+  "location_name": "ICU Room 3",
+  "status": "Active",
+  "criticality": "High",
+  "last_maintenance_date": "2025-10-15",
+  "next_due_date": "2025-11-15",
+  "alerts": [
+    {"id":"al-33","severity":"Warning","message":"Due in 7 days"}
+  ],
+  "maintenance_history": [
+    {"id":"mh-1","performed_by":"Eng. Layla","performed_at":"2025-07-10","result":"Pass","notes":"Calibration ok"}
+  ],
+  "attachments": [
+    {"id":"f-1","filename":"manual.pdf","url":"/files/manual.pdf"}
+  ]
+}
+✅ 11. Acceptance Criteria
+ Each equipment has its own structured, tabbed view
+ Key details (status, type, facility, maintenance) displayed clearly
+ Color badges and icons used for quick visual context
+ Maintenance + alerts summarized in one section
+ History and attachments easily accessible
+ Optional map / QR code integration for field use
+🚀 12. Optional Enhancements
+Feature	Benefit
+📱 QR-code Scan Access	Technicians can scan and open details instantly
+🧠 AI Notes Summary	Summarize last 5 maintenance reports into key points
+📈 Timeline Visualization	Interactive chart showing service history
+🔔 Inline Alert Panel	Highlight overdue maintenance directly inside detail view
+📤 Export PDF Report	One-click to generate a full equipment report for audits
