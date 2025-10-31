@@ -2,7 +2,7 @@
 // Automatically scans equipment and generates maintenance alerts
 
 import { db } from "./db";
-import { eq, and, isNull, lte } from "drizzle-orm";
+import { eq, and, isNull, lte, sql } from "drizzle-orm";
 import { equipment, alerts, facilities, locations } from "@shared/schema";
 
 interface AlertGenerationResult {
@@ -64,7 +64,7 @@ export async function generateMaintenanceAlerts(userId?: string): Promise<AlertG
       let message = '';
 
       // Determine alert severity and message
-      // Simplified to match original spec: only 7-day warning and overdue critical
+      // Three-tier alert system: Info (early warning) → Warning → Critical
       if (daysUntilDue <= 0) {
         // Overdue or due today - Critical
         severity = 'critical';
@@ -76,11 +76,16 @@ export async function generateMaintenanceAlerts(userId?: string): Promise<AlertG
           title = `Overdue Maintenance: ${equip.name}`;
           message = `${equip.name} (${equip.equipmentId || 'N/A'}) maintenance is ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue. Immediate action required.`;
         }
-      } else if (daysUntilDue === 7) {
-        // 7 days until due - Warning
+      } else if (daysUntilDue <= 7) {
+        // 1-7 days until due - Warning
         severity = 'warning';
         title = `Maintenance Due Soon: ${equip.name}`;
-        message = `${equip.name} (${equip.equipmentId || 'N/A'}) maintenance is due in 7 days. Please schedule maintenance.`;
+        message = `${equip.name} (${equip.equipmentId || 'N/A'}) maintenance is due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}.  Please schedule maintenance.`;
+      } else if (daysUntilDue <= 14) {
+        // 8-14 days until due - Info (early warning)
+        severity = 'info';
+        title = `Upcoming Maintenance: ${equip.name}`;
+        message = `${equip.name} (${equip.equipmentId || 'N/A'}) maintenance is planned in ${daysUntilDue} days.`;
       }
 
       // Skip if no alert needed
@@ -89,63 +94,39 @@ export async function generateMaintenanceAlerts(userId?: string): Promise<AlertG
         continue;
       }
 
-      // Check for existing open alert for this equipment
-      const [existingAlert] = await db
-        .select()
-        .from(alerts)
-        .where(
-          and(
-            eq(alerts.entityType, 'equipment'),
-            eq(alerts.entityId, equip.id),
-            eq(alerts.status, 'open'),
-            eq(alerts.severity, severity)
-          )
-        )
-        .limit(1);
-
-      if (existingAlert) {
-        // Update existing alert if message has changed (e.g., "due today" → "overdue")
-        if (existingAlert.title !== title || existingAlert.message !== message) {
-          try {
-            await db
-              .update(alerts)
-              .set({
-                title,
-                message,
-                updatedAt: new Date(),
-              })
-              .where(eq(alerts.id, existingAlert.id));
-            
-            result.skipped++; // Count as skipped (not created)
-          } catch (error) {
-            result.errors.push(`Failed to update alert for ${equip.name}: ${error}`);
-          }
-        } else {
-          // Alert exists and message is same, skip
-          result.skipped++;
-        }
-        continue;
-      }
-
-      // Create new alert
+      // UPSERT pattern: Insert or update existing alert
+      // Uses UNIQUE constraint on (entityType, entityId, userId) WHERE status IN ('open', 'escalated')
+      // This automatically upgrades severity (Info → Warning → Critical) as due date approaches
       try {
-        await db.insert(alerts).values({
-          userId: equip.userId,
-          entityType: 'equipment',
-          entityId: equip.id,
-          facilityId: equip.facilityId,
-          locationId: equip.locationId,
-          severity,
-          title,
-          message,
-          status: 'open',
-          firstTriggeredAt: new Date(),
-          escalationLevel: 0,
-        });
+        await db
+          .insert(alerts)
+          .values({
+            userId: equip.userId,
+            entityType: 'equipment',
+            entityId: equip.id,
+            facilityId: equip.facilityId,
+            locationId: equip.locationId,
+            severity,
+            title,
+            message,
+            status: 'open',
+            firstTriggeredAt: new Date(),
+            escalationLevel: 0,
+          })
+          .onConflictDoUpdate({
+            target: [alerts.entityType, alerts.entityId, alerts.userId],
+            targetWhere: sql`status IN ('open', 'escalated')`,
+            set: {
+              severity,
+              title,
+              message,
+              updatedAt: new Date(),
+            },
+          });
 
         result.created++;
       } catch (error) {
-        result.errors.push(`Failed to create alert for ${equip.name}: ${error}`);
+        result.errors.push(`Failed to create/update alert for ${equip.name}: ${error}`);
       }
     }
   } catch (error) {

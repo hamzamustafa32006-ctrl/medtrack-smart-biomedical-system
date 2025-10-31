@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
 import {
   index,
+  uniqueIndex,
   jsonb,
   pgTable,
   timestamp,
@@ -456,6 +457,11 @@ export const alerts = pgTable("alerts", {
   index("alerts_status_idx").on(table.status),
   index("alerts_severity_idx").on(table.severity),
   index("alerts_facility_idx").on(table.facilityId),
+  // UNIQUE constraint: only one active alert per entity per user
+  // This prevents duplicate open/escalated alerts for the same equipment
+  uniqueIndex("alerts_entity_active_unique")
+    .on(table.entityType, table.entityId, table.userId)
+    .where(sql`status IN ('open', 'escalated')`),
 ]);
 
 export const alertsRelations = relations(alerts, ({ one, many }) => ({
