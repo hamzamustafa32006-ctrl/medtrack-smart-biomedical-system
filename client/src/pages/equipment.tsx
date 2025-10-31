@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Settings, Calendar, Clock } from "lucide-react";
+import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
 import type { Equipment, Contract, Facility, Location } from "@shared/schema";
@@ -250,6 +250,17 @@ export default function EquipmentPage() {
     setContractDialogOpen(true);
   };
 
+  // Calculate dashboard stats
+  const totalEquipment = equipment?.length || 0;
+  const underMaintenanceCount = equipment ? equipment.filter((e: any) => e.status === 'Under Maintenance').length : 0;
+  const underMaintenancePercent = totalEquipment > 0 ? Math.round((underMaintenanceCount / totalEquipment) * 100) : 0;
+  const overdueCount = equipment ? equipment.filter((e: any) => e.isOverdue === true).length : 0;
+  const overduePercent = totalEquipment > 0 ? Math.round((overdueCount / totalEquipment) * 100) : 0;
+  const uniqueFacilities = equipment ? new Set(equipment.filter((e: any) => e.facilityId).map((e: any) => e.facilityId)) : new Set();
+  const facilitiesCount = uniqueFacilities.size;
+  const uniqueLocations = equipment ? new Set(equipment.filter((e: any) => e.locationId).map((e: any) => e.locationId)) : new Set();
+  const locationsCount = uniqueLocations.size;
+
   return (
     <div className="min-h-full bg-background">
       <div className="border-b bg-card px-6 py-4">
@@ -257,6 +268,65 @@ export default function EquipmentPage() {
       </div>
 
       <div className="container mx-auto px-4 py-6 max-w-4xl">
+        {/* Dashboard Stats */}
+        {!isLoading && equipment && equipment.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+            <Card data-testid="stat-total-equipment">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Equipment</CardTitle>
+                <Package className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="value-total-equipment">{totalEquipment}</div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="stat-under-maintenance">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Under Maintenance</CardTitle>
+                <Wrench className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="value-under-maintenance">{underMaintenancePercent}%</div>
+                <p className="text-xs text-muted-foreground">{underMaintenanceCount} of {totalEquipment}</p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="stat-overdue">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-warning" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-warning" data-testid="value-overdue">{overduePercent}%</div>
+                <p className="text-xs text-muted-foreground">{overdueCount} of {totalEquipment}</p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="stat-facilities">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Facilities</CardTitle>
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="value-facilities">{facilitiesCount}</div>
+                <p className="text-xs text-muted-foreground">Covered</p>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="stat-locations">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Locations</CardTitle>
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="value-locations">{locationsCount}</div>
+                <p className="text-xs text-muted-foreground">In use</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold">Your Equipment</h2>
           <Dialog open={equipmentDialogOpen} onOpenChange={setEquipmentDialogOpen}>
