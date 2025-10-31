@@ -35,8 +35,27 @@ Preferred communication style: Simple, everyday language.
 **Component Structure**
 - Page components in `client/src/pages/`: landing, home (alerts), equipment, history, settings
 - Reusable UI components in `client/src/components/ui/` from shadcn/ui
-- Custom app components: AppSidebar, BottomNav, TopBar
+- Custom app components: AppSidebar, BottomNav, TopBar, AlertCenter
 - Conditional rendering based on screen size (mobile vs. desktop navigation)
+
+**Equipment Management Page** (`client/src/pages/equipment.tsx`)
+- Modern table view with sortable columns (Name, Location, Status, Criticality)
+- Status badges (Operational: green, Maintenance: yellow, Decommissioned: gray)
+- Criticality badges (Critical: red, High: orange, Medium: yellow, Low: blue)
+- Search functionality for equipment names
+- Filter dropdowns for facility, status, and criticality
+- Equipment Detail Dashboard (Sheet component, 700px width):
+  - **Enhanced Header**: Equipment name (2xl bold), manufacturer • model subtitle, status & criticality badges
+  - **Tabbed Interface** (4 tabs):
+    1. **Overview Tab**: 2-column grid with InfoItem helper showing Equipment ID, Serial Number, Criticality badge, Install Date, Purchase Date, Warranty Expiry, Barcode; Service Contracts section; Equipment Notes card
+    2. **Maintenance & Alerts Tab**: Next Maintenance card (large date + color-coded countdown: red if overdue, orange if ≤7 days), Last Maintenance card, Maintenance Schedule card, Active Alerts placeholder
+    3. **Location & Facility Tab**: Card showing Facility name, Department/Area, Floor, Room with Building2 icon
+    4. **History Tab**: Maintenance History table (fetches from `/api/maintenance-records`, filters by equipmentId, sorts by date descending) showing Date, Type, Status (Completed/Pending badges), Performed By, Notes; Equipment Notes section; Add Service Contract button
+  - **InfoItem Helper Component**: Reusable label-value pair component with icon support for consistent metadata display
+  - **Data Integration**: useQuery for maintenance records with `staleTime: 0` for fresh data on mount
+- All dates displayed in dd/MM/yyyy format using formatDate() utility
+- Dialog forms for creating new equipment with facility/location selection
+- CRUD operations with proper cache invalidation via queryClient
 
 ### Backend Architecture
 
