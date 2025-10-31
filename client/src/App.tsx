@@ -8,6 +8,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useAlertNotifications } from "@/hooks/use-alert-notifications.tsx";
 import Landing from "@/pages/landing";
 import Home from "@/pages/home";
 import Alerts from "@/pages/alerts";
@@ -45,6 +46,9 @@ function Router() {
 
 function AuthenticatedApp() {
   const { isAuthenticated, isLoading } = useAuth();
+  
+  // Enable alert notifications polling only when authenticated
+  useAlertNotifications(isAuthenticated);
   
   // Custom sidebar width for better mobile and desktop experience
   const sidebarStyle = {
