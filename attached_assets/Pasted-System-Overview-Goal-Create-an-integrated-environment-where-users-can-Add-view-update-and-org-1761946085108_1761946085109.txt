@@ -1,0 +1,192 @@
+System Overview
+🎯 Goal
+Create an integrated environment where users can:
+Add, view, update, and organize equipment with full metadata.
+Link equipment to facilities, locations, vendors, and maintenance schedules.
+Automatically generate and manage alerts when maintenance or calibration is due.
+Monitor active alerts and overdue equipment in a centralized Alert Center.
+🧱 2. Database Schema
+🔹 Equipment Table
+CREATE TABLE equipment (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_code TEXT UNIQUE,
+  name TEXT NOT NULL,
+  type TEXT,
+  model TEXT,
+  manufacturer TEXT,
+  serial_number TEXT,
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  vendor_id UUID REFERENCES vendors(id),
+  purchase_date DATE,
+  warranty_expiry DATE,
+  criticality TEXT CHECK (criticality IN ('Low','Medium','High')) DEFAULT 'Medium',
+  status TEXT CHECK (status IN ('Active','Under Maintenance','Decommissioned')) DEFAULT 'Active',
+  last_maintenance_date DATE,
+  next_due_date DATE,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+🔹 Maintenance Alerts Table
+CREATE TABLE maintenance_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id),
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  severity TEXT CHECK (severity IN ('Info','Warning','Critical')) DEFAULT 'Info',
+  title TEXT,
+  message TEXT,
+  due_date DATE,
+  status TEXT CHECK (status IN ('Open','Acknowledged','Resolved')) DEFAULT 'Open',
+  triggered_at TIMESTAMP DEFAULT NOW(),
+  acknowledged_at TIMESTAMP,
+  resolved_at TIMESTAMP
+);
+🧠 3. Backend Logic
+🔹 Daily Maintenance Scheduler (CRON / Background Worker)
+Runs daily to check which devices need maintenance soon or are overdue.
+from datetime import date
+from db import query, execute
+
+def generate_alerts():
+    today = date.today()
+    rows = query("""
+      SELECT id, name, next_due_date, facility_id, location_id
+      FROM equipment WHERE status != 'Decommissioned'
+    """)
+    for e in rows:
+        days_left = (e["next_due_date"] - today).days if e["next_due_date"] else None
+        if days_left is None: continue
+
+        if days_left <= 0:
+            severity = "Critical"
+            title = f"{e['name']} maintenance overdue!"
+            message = f"{e['name']} in {e['location_id']} is {abs(days_left)} day(s) overdue."
+        elif days_left <= 7:
+            severity = "Warning"
+            title = f"{e['name']} maintenance due soon"
+            message = f"Due in {days_left} day(s)."
+        else:
+            continue
+
+        existing = query("SELECT id FROM maintenance_alerts WHERE equipment_id=%s AND status='Open'", [e["id"]])
+        if not existing:
+            execute("""
+              INSERT INTO maintenance_alerts (equipment_id, facility_id, location_id, severity, title, message, due_date)
+              VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """, [e["id"], e["facility_id"], e["location_id"], severity, title, message, e["next_due_date"]])
+✅ Automatically creates new alerts for due or overdue devices
+✅ Prevents duplicates
+✅ Easily extendable with vendor warranty reminders
+🔐 4. API Endpoints
+Method	Endpoint	Description
+GET	/equipment	List all equipment
+POST	/equipment	Create new equipment
+GET	/equipment/:id	Get full equipment details
+PATCH	/equipment/:id	Update details
+DELETE	/equipment/:id	Decommission or delete
+GET	/alerts	Get all active alerts
+PATCH	/alerts/:id/ack	Acknowledge an alert
+PATCH	/alerts/:id/resolve	Mark alert resolved
+🧭 5. Frontend — Equipment Management Interface
+A. Equipment Dashboard (Main View)
+Show all devices in a sortable, filterable grid.
+Icon	Name	Type	Facility	Location	Status	Next Maintenance	Criticality
+🏥	Ventilator V900	Life Support	AASU Hospital	ICU 3	🔴 Overdue	Nov 2, 2025	High
+⚙️	X-Ray XR210	Diagnostic	Radiology	Room B12	🟢 Active	Dec 12, 2025	Medium
+Features:
+Inline filtering (facility, type, status)
+Search bar (e.g. “ventilator”)
+Pagination for large datasets
+Color-coded badges for readability
+B. Equipment Detail Drawer
+When user clicks on a row, show all details in a slide-in panel:
+Sections:
+Header: Name, status, and type
+Basic Info: Model, serial, manufacturer, vendor
+Facility/Location: Building, room, floor
+Maintenance: Last/next maintenance date, technician
+Attachments: Manuals, service reports
+QR Code: Scan to open on mobile
+<Drawer open={showDetails}>
+  <h2 className="text-xl font-semibold">{equipment.name}</h2>
+  <StatusBadge status={equipment.status} />
+  <p className="text-sm text-gray-500">{equipment.type} • {equipment.manufacturer}</p>
+
+  <Divider />
+  <Info label="Facility" value={equipment.facility_name} />
+  <Info label="Location" value={equipment.location_name} />
+  <Info label="Next Maintenance" value={formatDate(equipment.next_due_date)} />
+  <Info label="Criticality" value={<CriticalityBadge level={equipment.criticality} />} />
+
+  <Divider />
+  <h3 className="font-semibold mt-2">Active Alerts</h3>
+  {equipment.alerts.map(a => (
+    <AlertCard key={a.id} alert={a} />
+  ))}
+</Drawer>
+🔔 6. Frontend — Alert Center
+A. Overview
+A dedicated page or sidebar drawer that displays all system alerts, color-coded and grouped by severity.
+Features:
+Real-time updates (WebSocket or polling)
+Acknowledgement buttons
+Facility & Severity filters
+Quick navigation to related equipment
+B. Example Alert Card
+<div className={`p-4 mb-3 rounded-xl border-l-4 
+  ${a.severity==='Critical'?'border-red-500 bg-red-50':
+    a.severity==='Warning'?'border-yellow-500 bg-yellow-50':'border-blue-500 bg-blue-50'}`}>
+  <div className="flex justify-between items-center">
+    <h4 className="font-semibold">{a.title}</h4>
+    <StatusBadge status={a.severity} />
+  </div>
+  <p className="text-sm text-gray-600">{a.message}</p>
+  <p className="text-xs text-gray-500">
+    {a.facility_name} • {a.location_name} • Due {formatDate(a.due_date)}
+  </p>
+
+  <div className="flex gap-2 mt-2">
+    {a.status === 'Open' && <button className="btn-sm" onClick={() => ackAlert(a.id)}>Acknowledge</button>}
+    <button className="btn-sm btn-outline" onClick={() => openEquipment(a.equipment_id)}>View Equipment</button>
+  </div>
+</div>
+✅ Critical alerts appear at the top
+✅ Resolved alerts are grayed out
+C. Alert Center Filters
+Facility: Dropdown
+Severity: Critical / Warning / Info
+Status: Open / Acknowledged / Resolved
+Search: By equipment name
+Add small metrics bar:
+🔴 3 Critical | 🟡 5 Warning | 🟢 12 Resolved
+📊 7. Dashboard Widgets (Optional)
+Integrate alert + equipment summaries on your main dashboard.
+Widget	Example
+⚠️ Critical Alerts	3 open
+🔧 Equipment Under Maintenance	5
+🧰 Total Equipment	128
+🏥 Active Facilities	6
+Add charts:
+Pie chart: Equipment by status
+Bar chart: Alerts per facility
+🧩 8. Integrations
+Feature	Description
+QR Code	Scannable code links directly to equipment details
+Email / Push Alerts	Send notifications for critical equipment
+Role-based Access	Technicians = view/acknowledge, Admin = full control
+Audit Log	Track who acknowledged or resolved each alert
+✅ 9. Acceptance Criteria
+ Equipment CRUD supports facility, vendor, and maintenance info
+ Auto-alerts generate daily based on due dates
+ Alerts are displayed in a centralized Alert Center
+ Users can acknowledge/resolve alerts
+ Real-time updates for critical alerts
+ Integration with dashboard metrics
+🚀 10. Next Upgrade Ideas
+Feature	Description
+🧠 Predictive AI Alerts	Detect patterns in breakdowns (e.g., “X-Ray likely to fail soon”)
+🗺️ Facility Map Integration	Show device distribution by floor/department
+📱 Mobile Technician Mode	Offline access + QR scan for fieldwork
+📄 Export Reports	PDF summaries for audits and calibration
