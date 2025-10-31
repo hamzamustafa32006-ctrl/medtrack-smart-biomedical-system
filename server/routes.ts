@@ -9,6 +9,7 @@ import {
   insertMaintenanceRecordSchema,
   insertFacilitySchema,
   insertLocationSchema,
+  insertVendorSchema,
   insertMaintenanceTaskSchema,
 } from "@shared/schema";
 import { z } from "zod";
@@ -34,14 +35,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================
+  // Vendor routes
+  // ============================================
+
+  app.get("/api/vendors", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const vendors = await storage.getVendors(userId);
+      res.json(vendors);
+    } catch (error) {
+      console.error("Error fetching vendors:", error);
+      res.status(500).json({ message: "Failed to fetch vendors" });
+    }
+  });
+
+  app.get("/api/vendors/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const vendor = await storage.getVendorById(id, userId);
+      
+      if (!vendor) {
+        return res.status(404).json({ message: "Vendor not found" });
+      }
+      
+      res.json(vendor);
+    } catch (error) {
+      console.error("Error fetching vendor:", error);
+      res.status(500).json({ message: "Failed to fetch vendor" });
+    }
+  });
+
+  app.post("/api/vendors", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = insertVendorSchema.parse(req.body);
+      const vendor = await storage.createVendor(data, userId);
+      res.status(201).json(vendor);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating vendor:", error);
+      res.status(500).json({ message: "Failed to create vendor" });
+    }
+  });
+
+  app.patch("/api/vendors/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const data = insertVendorSchema.partial().parse(req.body);
+      const vendor = await storage.updateVendor(id, data, userId);
+      
+      if (!vendor) {
+        return res.status(404).json({ message: "Vendor not found" });
+      }
+      
+      res.json(vendor);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating vendor:", error);
+      res.status(500).json({ message: "Failed to update vendor" });
+    }
+  });
+
+  app.delete("/api/vendors/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const success = await storage.deleteVendor(id, userId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Vendor not found" });
+      }
+      
+      res.json({ message: "Vendor deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting vendor:", error);
+      res.status(500).json({ message: "Failed to delete vendor" });
+    }
+  });
+
+  // ============================================
   // Equipment routes
   // ============================================
 
-  // Get all equipment for user
+  // Get all equipment for user (with joined details)
   app.get("/api/equipment", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const equipment = await storage.getEquipment(userId);
+      const equipment = await storage.getEquipmentWithDetails(userId);
       res.json(equipment);
     } catch (error) {
       console.error("Error fetching equipment:", error);

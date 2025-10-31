@@ -6,6 +6,7 @@ import {
   maintenanceRecords,
   facilities,
   locations,
+  vendors,
   maintenancePlans,
   maintenanceTasks,
   alerts,
@@ -23,6 +24,8 @@ import {
   type InsertFacility,
   type Location,
   type InsertLocation,
+  type Vendor,
+  type InsertVendor,
   type MaintenancePlan,
   type InsertMaintenancePlan,
   type MaintenanceTask,
@@ -58,8 +61,16 @@ export interface IStorage {
   updateLocation(id: string, data: Partial<InsertLocation>, userId: string): Promise<Location | undefined>;
   deleteLocation(id: string, userId: string): Promise<boolean>;
   
+  // Vendor operations
+  getVendors(userId: string): Promise<Vendor[]>;
+  getVendorById(id: string, userId: string): Promise<Vendor | undefined>;
+  createVendor(data: InsertVendor, userId: string): Promise<Vendor>;
+  updateVendor(id: string, data: Partial<InsertVendor>, userId: string): Promise<Vendor | undefined>;
+  deleteVendor(id: string, userId: string): Promise<boolean>;
+  
   // Equipment operations
   getEquipment(userId: string): Promise<Equipment[]>;
+  getEquipmentWithDetails(userId: string): Promise<any[]>;
   getEquipmentById(id: string, userId: string): Promise<Equipment | undefined>;
   createEquipment(data: InsertEquipment, userId: string): Promise<Equipment>;
   updateEquipment(id: string, data: Partial<InsertEquipment>, userId: string): Promise<Equipment | undefined>;
@@ -312,6 +323,62 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ============================================
+  // Vendor operations
+  // ============================================
+
+  async getVendors(userId: string): Promise<Vendor[]> {
+    return await db
+      .select()
+      .from(vendors)
+      .where(eq(vendors.userId, userId))
+      .orderBy(vendors.name);
+  }
+
+  async getVendorById(id: string, userId: string): Promise<Vendor | undefined> {
+    const [vendor] = await db
+      .select()
+      .from(vendors)
+      .where(and(eq(vendors.id, id), eq(vendors.userId, userId)));
+    return vendor;
+  }
+
+  async createVendor(data: InsertVendor, userId: string): Promise<Vendor> {
+    const [vendor] = await db
+      .insert(vendors)
+      .values({ ...data, userId })
+      .returning();
+    return vendor;
+  }
+
+  async updateVendor(
+    id: string,
+    data: Partial<InsertVendor>,
+    userId: string
+  ): Promise<Vendor | undefined> {
+    const existing = await this.getVendorById(id, userId);
+    if (!existing) return undefined;
+
+    const [vendor] = await db
+      .update(vendors)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(vendors.id, id))
+      .returning();
+    return vendor;
+  }
+
+  async deleteVendor(id: string, userId: string): Promise<boolean> {
+    const vendor = await this.getVendorById(id, userId);
+    if (!vendor) return false;
+
+    const result = await db
+      .delete(vendors)
+      .where(eq(vendors.id, id))
+      .returning({ id: vendors.id });
+    
+    return result.length > 0;
+  }
+
+  // ============================================
   // Equipment operations
   // ============================================
 
@@ -321,6 +388,60 @@ export class DatabaseStorage implements IStorage {
       .from(equipment)
       .where(eq(equipment.userId, userId))
       .orderBy(desc(equipment.createdAt));
+  }
+
+  async getEquipmentWithDetails(userId: string): Promise<any[]> {
+    const result = await db
+      .select({
+        id: equipment.id,
+        userId: equipment.userId,
+        equipmentId: equipment.equipmentId,
+        name: equipment.name,
+        type: equipment.type,
+        manufacturer: equipment.manufacturer,
+        model: equipment.model,
+        serial: equipment.serial,
+        barcode: equipment.barcode,
+        status: equipment.status,
+        criticality: equipment.criticality,
+        installDate: equipment.installDate,
+        purchaseDate: equipment.purchaseDate,
+        warrantyExpiryDate: equipment.warrantyExpiryDate,
+        nextDueDate: equipment.nextDueDate,
+        notes: equipment.notes,
+        createdAt: equipment.createdAt,
+        updatedAt: equipment.updatedAt,
+        facilityId: equipment.facilityId,
+        locationId: equipment.locationId,
+        vendorId: equipment.vendorId,
+        facility: {
+          id: facilities.id,
+          name: facilities.name,
+          code: facilities.code,
+        },
+        location: {
+          id: locations.id,
+          name: locations.name,
+          floor: locations.floor,
+        },
+        vendor: {
+          id: vendors.id,
+          name: vendors.name,
+          contact: vendors.contact,
+        },
+      })
+      .from(equipment)
+      .leftJoin(facilities, eq(equipment.facilityId, facilities.id))
+      .leftJoin(locations, eq(equipment.locationId, locations.id))
+      .leftJoin(vendors, eq(equipment.vendorId, vendors.id))
+      .where(eq(equipment.userId, userId))
+      .orderBy(desc(equipment.createdAt));
+
+    const now = new Date();
+    return result.map(row => ({
+      ...row,
+      isOverdue: row.nextDueDate ? row.nextDueDate < now : false,
+    }));
   }
 
   async getEquipmentById(id: string, userId: string): Promise<Equipment | undefined> {
