@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { NotificationBell } from "@/components/NotificationBell";
 import Landing from "@/pages/landing";
 import Home from "@/pages/home";
+import Alerts from "@/pages/alerts";
 import Tasks from "@/pages/tasks";
 import Facilities from "@/pages/facilities";
 import Equipment from "@/pages/equipment";
@@ -31,6 +32,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/alerts" component={Alerts} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/facilities" component={Facilities} />
       <Route path="/equipment" component={Equipment} />

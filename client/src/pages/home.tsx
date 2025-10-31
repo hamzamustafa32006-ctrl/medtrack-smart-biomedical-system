@@ -4,10 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Bell, Calendar, Clock, Plus } from "lucide-react";
-import { differenceInDays, isPast } from "date-fns";
+import { AlertTriangle, Bell, Calendar, Clock, Plus, CheckCircle } from "lucide-react";
+import { differenceInDays, isPast, subDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
 import type { Equipment, Contract } from "@shared/schema";
+
+type AlertSummary = {
+  id: string;
+  severity: string;
+  status: string;
+  createdAt: string | null;
+  resolvedAt: string | null;
+};
 
 interface AlertItem {
   id: string;
@@ -27,6 +35,42 @@ export default function Home() {
 
   const { data: contracts, isLoading: contractsLoading } = useQuery<Contract[]>({
     queryKey: ["/api/contracts"],
+  });
+
+  // Alert summary queries
+  const { data: criticalAlerts = [] } = useQuery<AlertSummary[]>({
+    queryKey: ['/api/alerts', 'critical', 'open'],
+    queryFn: async () => {
+      const response = await fetch('/api/alerts?severity=critical&status=open');
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const { data: upcomingMaintenanceAlerts = [] } = useQuery<AlertSummary[]>({
+    queryKey: ['/api/alerts', 'warning', 'open'],
+    queryFn: async () => {
+      const response = await fetch('/api/alerts?severity=warning&status=open');
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const { data: allResolvedAlerts = [] } = useQuery<AlertSummary[]>({
+    queryKey: ['/api/alerts', 'resolved'],
+    queryFn: async () => {
+      const response = await fetch('/api/alerts?status=resolved');
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  // Filter resolved alerts to only show those resolved in the last 7 days
+  const resolvedThisWeek = allResolvedAlerts.filter((alert) => {
+    if (!alert.resolvedAt) return false;
+    const resolvedDate = new Date(alert.resolvedAt);
+    const weekAgo = subDays(new Date(), 7);
+    return resolvedDate >= weekAgo;
   });
 
   const isLoading = equipmentLoading || contractsLoading;
@@ -107,35 +151,51 @@ export default function Home() {
       </div>
 
       <div className="container mx-auto px-4 py-6 max-w-4xl">
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <Card>
+        {/* Alert Summary Widgets */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <Card className="border-2 border-destructive bg-destructive/5 dark:bg-destructive/5">
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-warning/10 rounded-md flex items-center justify-center flex-shrink-0">
-                  <AlertTriangle className="w-6 h-6 text-warning" />
+                <div className="w-12 h-12 bg-destructive/10 dark:bg-destructive/20 rounded-md flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-destructive" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-2xl font-bold" data-testid="text-urgent-count">
-                    {alerts.filter((a) => a.isUrgent).length}
+                  <p className="text-2xl font-bold text-destructive" data-testid="text-critical-count">
+                    {criticalAlerts.length}
                   </p>
-                  <p className="text-sm text-muted-foreground">Urgent Alerts</p>
+                  <p className="text-sm text-muted-foreground">Critical Alerts</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-2 border-accent bg-accent/10 dark:bg-accent/5">
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center flex-shrink-0">
-                  <Bell className="w-6 h-6 text-primary" />
+                <div className="w-12 h-12 bg-accent/10 dark:bg-accent/20 rounded-md flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-6 h-6 text-accent-foreground" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-2xl font-bold" data-testid="text-total-alerts">
-                    {alerts.length}
+                  <p className="text-2xl font-bold text-accent-foreground" data-testid="text-upcoming-count">
+                    {upcomingMaintenanceAlerts.length}
                   </p>
-                  <p className="text-sm text-muted-foreground">Total Alerts</p>
+                  <p className="text-sm text-muted-foreground">Upcoming Maintenance</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-2 border-green-600 bg-green-50 dark:bg-green-900/10">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-md flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-resolved-count">
+                    {resolvedThisWeek.length}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Resolved This Week</p>
                 </div>
               </div>
             </CardContent>

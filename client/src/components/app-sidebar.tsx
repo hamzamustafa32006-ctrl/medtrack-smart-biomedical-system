@@ -9,10 +9,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { Bell, ClipboardList, History, Settings, Building2, CheckSquare } from "lucide-react";
+import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell } from "lucide-react";
 
 const navItems = [
-  { path: "/", icon: Bell, label: "Alerts", testId: "nav-alerts" },
+  { path: "/", icon: Home, label: "Home", testId: "nav-home" },
+  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "nav-alerts" },
   { path: "/tasks", icon: CheckSquare, label: "Tasks", testId: "nav-tasks" },
   { path: "/facilities", icon: Building2, label: "Facilities", testId: "nav-facilities" },
   { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "nav-equipment" },
