@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/useAuth";
+import { NotificationBell } from "@/components/NotificationBell";
 import Landing from "@/pages/landing";
 import Home from "@/pages/home";
 import Tasks from "@/pages/tasks";
@@ -63,8 +64,9 @@ function AuthenticatedApp() {
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1">
-          <header className="flex items-center justify-between p-2 border-b">
+          <header className="flex items-center justify-between p-2 border-b gap-2">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <NotificationBell />
           </header>
           <main className="flex-1 overflow-auto">
             <Toaster />

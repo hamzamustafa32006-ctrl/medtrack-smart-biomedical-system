@@ -1,4 +1,4 @@
-import { Bell, LogOut, User } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
+import { NotificationBell } from "./NotificationBell";
 
 interface TopBarProps {
   title: string;
@@ -31,15 +32,13 @@ export function TopBar({ title }: TopBarProps) {
   return (
     <header className="sticky top-0 z-40 bg-primary text-primary-foreground border-b border-primary-border">
       <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-primary-foreground/10 rounded-md flex items-center justify-center">
-            <Bell className="w-5 h-5" />
-          </div>
-          <h1 className="text-lg font-bold" data-testid="text-page-title">{title}</h1>
-        </div>
+        <h1 className="text-lg font-bold" data-testid="text-page-title">{title}</h1>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
@@ -53,31 +52,32 @@ export function TopBar({ title }: TopBarProps) {
                 </AvatarFallback>
               </Avatar>
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">
-                  {user?.firstName && user?.lastName
-                    ? `${user.firstName} ${user.lastName}`
-                    : "My Account"}
-                </p>
-                {user?.email && (
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {user.email}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">
+                    {user?.firstName && user?.lastName
+                      ? `${user.firstName} ${user.lastName}`
+                      : "My Account"}
                   </p>
-                )}
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <a href="/api/logout" className="cursor-pointer" data-testid="button-logout">
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
-              </a>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  {user?.email && (
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.email}
+                    </p>
+                  )}
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <a href="/api/logout" className="cursor-pointer" data-testid="button-logout">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );
