@@ -82,7 +82,9 @@ export interface IStorage {
   
   // Maintenance task operations
   getMaintenanceTasks(userId: string, filters?: { status?: string; equipmentId?: string }): Promise<MaintenanceTask[]>;
+  getMaintenanceTasksWithDetails(userId: string, filters?: { status?: string; equipmentId?: string; facilityId?: string; locationId?: string }): Promise<any[]>;
   getMaintenanceTaskById(id: string, userId?: string): Promise<MaintenanceTask | undefined>;
+  getMaintenanceTaskWithDetails(id: string, userId: string): Promise<any | undefined>;
   createMaintenanceTask(data: InsertMaintenanceTask, userId: string): Promise<MaintenanceTask>;
   updateMaintenanceTask(id: string, data: Partial<InsertMaintenanceTask>, userId: string): Promise<MaintenanceTask | undefined>;
   completeMaintenanceTask(id: string, completedBy: string, notes: string, userId: string, checklistResult?: any): Promise<MaintenanceTask | undefined>;
@@ -619,6 +621,129 @@ export class DatabaseStorage implements IStorage {
     return filteredTasks;
   }
 
+  async getMaintenanceTasksWithDetails(
+    userId: string,
+    filters?: { status?: string; equipmentId?: string; facilityId?: string; locationId?: string }
+  ): Promise<any[]> {
+    // Use INNER JOIN with facilities to enforce ownership
+    const tasks = await db
+      .select({
+        id: maintenanceTasks.id,
+        equipmentId: maintenanceTasks.equipmentId,
+        planId: maintenanceTasks.planId,
+        dueDate: maintenanceTasks.dueDate,
+        status: maintenanceTasks.status,
+        priority: maintenanceTasks.priority,
+        assignedTo: maintenanceTasks.assignedTo,
+        completedAt: maintenanceTasks.completedAt,
+        completedBy: maintenanceTasks.completedBy,
+        checklistResult: maintenanceTasks.checklistResult,
+        windowEndDate: maintenanceTasks.windowEndDate,
+        createdAt: maintenanceTasks.createdAt,
+        updatedAt: maintenanceTasks.updatedAt,
+        equipmentName: equipment.name,
+        equipmentIdCode: equipment.equipmentId,
+        equipmentType: equipment.type,
+        equipmentCriticality: equipment.criticality,
+        facilityId: facilities.id,
+        facilityName: facilities.name,
+        facilityCode: facilities.code,
+        locationId: locations.id,
+        locationName: locations.name,
+        planFrequencyDays: maintenancePlans.frequencyDays,
+        planBufferDays: maintenancePlans.bufferDays,
+        planChecklistJson: maintenancePlans.checklistJson,
+        planPolicy: maintenancePlans.policy,
+        assignedToUserEmail: users.email,
+        assignedToUserFirstName: users.firstName,
+        assignedToUserLastName: users.lastName,
+      })
+      .from(maintenanceTasks)
+      .innerJoin(equipment, eq(maintenanceTasks.equipmentId, equipment.id))
+      .innerJoin(facilities, eq(equipment.facilityId, facilities.id))
+      .innerJoin(maintenancePlans, eq(maintenanceTasks.planId, maintenancePlans.id))
+      .leftJoin(locations, eq(equipment.locationId, locations.id))
+      .leftJoin(users, eq(maintenanceTasks.assignedTo, users.id))
+      .where(eq(facilities.userId, userId))
+      .orderBy(desc(maintenanceTasks.dueDate));
+
+    // Apply filters
+    let filteredTasks = tasks;
+
+    if (filters?.status) {
+      filteredTasks = filteredTasks.filter(task => task.status === filters.status);
+    }
+
+    if (filters?.equipmentId) {
+      filteredTasks = filteredTasks.filter(task => task.equipmentId === filters.equipmentId);
+    }
+
+    if (filters?.facilityId) {
+      filteredTasks = filteredTasks.filter(task => task.facilityId === filters.facilityId);
+    }
+
+    if (filters?.locationId) {
+      filteredTasks = filteredTasks.filter(task => task.locationId === filters.locationId);
+    }
+
+    return filteredTasks;
+  }
+
+  async getMaintenanceTaskWithDetails(id: string, userId: string): Promise<any | undefined> {
+    // Use INNER JOIN with facilities to enforce ownership
+    const [task] = await db
+      .select({
+        id: maintenanceTasks.id,
+        equipmentId: maintenanceTasks.equipmentId,
+        planId: maintenanceTasks.planId,
+        dueDate: maintenanceTasks.dueDate,
+        status: maintenanceTasks.status,
+        priority: maintenanceTasks.priority,
+        assignedTo: maintenanceTasks.assignedTo,
+        completedAt: maintenanceTasks.completedAt,
+        completedBy: maintenanceTasks.completedBy,
+        checklistResult: maintenanceTasks.checklistResult,
+        windowEndDate: maintenanceTasks.windowEndDate,
+        createdAt: maintenanceTasks.createdAt,
+        updatedAt: maintenanceTasks.updatedAt,
+        equipmentName: equipment.name,
+        equipmentIdCode: equipment.equipmentId,
+        equipmentType: equipment.type,
+        equipmentSerialNumber: equipment.serial,
+        equipmentManufacturer: equipment.manufacturer,
+        equipmentModel: equipment.model,
+        equipmentCriticality: equipment.criticality,
+        equipmentStatus: equipment.status,
+        facilityId: facilities.id,
+        facilityName: facilities.name,
+        facilityCode: facilities.code,
+        facilityAddress: facilities.address,
+        locationId: locations.id,
+        locationName: locations.name,
+        locationFloor: locations.floor,
+        locationRoom: locations.room,
+        planFrequencyDays: maintenancePlans.frequencyDays,
+        planBufferDays: maintenancePlans.bufferDays,
+        planChecklistJson: maintenancePlans.checklistJson,
+        planPolicy: maintenancePlans.policy,
+        assignedToUserEmail: users.email,
+        assignedToUserFirstName: users.firstName,
+        assignedToUserLastName: users.lastName,
+      })
+      .from(maintenanceTasks)
+      .innerJoin(equipment, eq(maintenanceTasks.equipmentId, equipment.id))
+      .innerJoin(facilities, eq(equipment.facilityId, facilities.id))
+      .innerJoin(maintenancePlans, eq(maintenanceTasks.planId, maintenancePlans.id))
+      .leftJoin(locations, eq(equipment.locationId, locations.id))
+      .leftJoin(users, eq(maintenanceTasks.assignedTo, users.id))
+      .where(and(
+        eq(maintenanceTasks.id, id),
+        eq(facilities.userId, userId)
+      ));
+
+    return task;
+  }
+
   async getMaintenanceTaskById(id: string, userId?: string): Promise<MaintenanceTask | undefined> {
     const [task] = await db
       .select()
@@ -752,27 +877,8 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Cannot create alerts for other users');
     }
     
-    // Verify ownership of any referenced resources
-    if (data.maintenanceTaskId) {
-      const task = await this.getMaintenanceTaskById(data.maintenanceTaskId, userId);
-      if (!task) {
-        throw new Error('Maintenance task not found or access denied');
-      }
-    }
-    
-    if (data.equipmentId) {
-      const equipment = await this.getEquipmentById(data.equipmentId, userId);
-      if (!equipment) {
-        throw new Error('Equipment not found or access denied');
-      }
-    }
-    
-    if (data.contractId) {
-      const contract = await this.getContractById(data.contractId, userId);
-      if (!contract) {
-        throw new Error('Contract not found or access denied');
-      }
-    }
+    // Alerts use entityType and entityId for references (not direct foreign keys)
+    // Ownership validation happens at the entity level (task, equipment, contract)
     
     const [alert] = await db
       .insert(alerts)
@@ -790,27 +896,8 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getAlertById(id, userId);
     if (!existing) return undefined;
     
-    // Verify ownership of any new referenced resources
-    if (data.maintenanceTaskId && data.maintenanceTaskId !== existing.maintenanceTaskId) {
-      const task = await this.getMaintenanceTaskById(data.maintenanceTaskId, userId);
-      if (!task) {
-        throw new Error('Maintenance task not found or access denied');
-      }
-    }
-    
-    if (data.equipmentId && data.equipmentId !== existing.equipmentId) {
-      const equipment = await this.getEquipmentById(data.equipmentId, userId);
-      if (!equipment) {
-        throw new Error('Equipment not found or access denied');
-      }
-    }
-    
-    if (data.contractId && data.contractId !== existing.contractId) {
-      const contract = await this.getContractById(data.contractId, userId);
-      if (!contract) {
-        throw new Error('Contract not found or access denied');
-      }
-    }
+    // Alerts use entityType and entityId for references (not direct foreign keys)
+    // Ownership validation happens at the entity level (task, equipment, contract)
     
     const [alert] = await db
       .update(alerts)

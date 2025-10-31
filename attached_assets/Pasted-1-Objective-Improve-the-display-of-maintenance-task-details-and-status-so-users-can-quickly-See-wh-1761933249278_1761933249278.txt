@@ -1,0 +1,164 @@
+1. Objective
+Improve the display of maintenance task details and status so users can quickly:
+See what needs attention (e.g., overdue or pending tasks).
+Understand task context (equipment, location, responsible user).
+Review checklist completion, attachments, and notes in one place.
+Track status visually using badges, colors, and progress bars.
+🎨 2. Enhanced Task Card UI (Frontend)
+✅ Before
+A simple list with only task name, date, and status.
+🚀 After
+Each task becomes a card with contextual info and visual cues.
+<Card className="rounded-2xl p-4 shadow-md border-l-4"
+  style={{ borderColor: task.status === 'Overdue' ? '#dc2626' :
+                        task.status === 'In Progress' ? '#f59e0b' :
+                        task.status === 'Completed' ? '#16a34a' : '#3b82f6' }}>
+  <div className="flex justify-between items-center">
+    <div>
+      <h3 className="text-lg font-semibold">{task.equipment_name}</h3>
+      <p className="text-sm text-gray-500">{task.facility_name} • {task.location_name}</p>
+    </div>
+    <StatusBadge status={task.status} />
+  </div>
+
+  <div className="mt-2">
+    <p className="text-sm">Due Date: <b>{formatDate(task.due_date)}</b></p>
+    <p className="text-sm">Assigned To: <b>{task.assigned_to || 'Unassigned'}</b></p>
+  </div>
+
+  {task.status === 'In Progress' && (
+    <div className="mt-3">
+      <ProgressBar progress={task.progress_percentage || 0} />
+    </div>
+  )}
+
+  <div className="mt-3 flex justify-between">
+    <button className="btn-outline" onClick={() => openDetails(task.id)}>View Details</button>
+    {task.status !== 'Completed' && (
+      <button className="btn-primary" onClick={() => markComplete(task.id)}>Mark as Done</button>
+    )}
+  </div>
+</Card>
+🧩 Reusable Components
+StatusBadge
+const colors = {
+  "Pending": "bg-blue-100 text-blue-700",
+  "In Progress": "bg-yellow-100 text-yellow-700",
+  "Completed": "bg-green-100 text-green-700",
+  "Overdue": "bg-red-100 text-red-700"
+};
+
+export function StatusBadge({ status }) {
+  return <span className={`px-3 py-1 text-xs font-semibold rounded-full ${colors[status] || 'bg-gray-100 text-gray-600'}`}>
+    {status}
+  </span>;
+}
+ProgressBar
+export function ProgressBar({ progress }) {
+  return (
+    <div className="w-full bg-gray-200 rounded-full h-2.5">
+      <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+           style={{ width: `${progress}%` }}></div>
+    </div>
+  );
+}
+🧾 3. Detailed Task Modal
+When a user clicks “View Details”, open a modal with comprehensive info:
+Layout
+Section	Content
+Header	Task title + status badge
+Equipment Info	Name, type, serial, facility/location
+Dates	Assigned, Due, Completed
+Checklist	Step-by-step with icons for done / pending
+Technician Notes	Comments, remarks, attachments
+History	Previous maintenance events
+Buttons	Edit, Complete, Download Report
+Example (React)
+<Modal open={show} onClose={close}>
+  <div className="p-6 space-y-4">
+    <h2 className="text-xl font-bold">{task.equipment_name}</h2>
+    <StatusBadge status={task.status} />
+
+    <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+      <p><b>Facility:</b> {task.facility_name}</p>
+      <p><b>Location:</b> {task.location_name}</p>
+      <p><b>Assigned To:</b> {task.assigned_to}</p>
+      <p><b>Due Date:</b> {formatDate(task.due_date)}</p>
+    </div>
+
+    <Divider />
+
+    <h3 className="text-md font-semibold mt-2">Checklist</h3>
+    <ul>
+      {task.checklist.map((step, i) => (
+        <li key={i} className="flex items-center gap-2">
+          {step.done ? <CheckCircleIcon className="text-green-500"/> : <ClockIcon className="text-gray-400"/>}
+          <span>{step.text}</span>
+        </li>
+      ))}
+    </ul>
+
+    {task.notes && (
+      <>
+        <Divider />
+        <p className="text-sm text-gray-700"><b>Technician Notes:</b> {task.notes}</p>
+      </>
+    )}
+
+    {task.attachments?.length > 0 && (
+      <>
+        <Divider />
+        <h3 className="font-semibold">Attachments</h3>
+        <ul className="list-disc ml-4">
+          {task.attachments.map((f, i) => (
+            <li key={i}><a href={f.url} target="_blank" className="text-blue-600 underline">{f.filename}</a></li>
+          ))}
+        </ul>
+      </>
+    )}
+  </div>
+</Modal>
+📊 4. Backend Improvements
+Enhance your /tasks/:id endpoint to return richer contextual data:
+{
+  "id": "t_101",
+  "equipment_name": "Ventilator V-900",
+  "facility_name": "AASU Hospital",
+  "location_name": "ICU Room 3",
+  "assigned_to": "Eng. Sarah Al-Harbi",
+  "status": "Overdue",
+  "due_date": "2025-11-05",
+  "checklist": [
+    {"text": "Inspect air filters", "done": true},
+    {"text": "Test pressure sensors", "done": false}
+  ],
+  "attachments": [
+    {"filename": "maintenance_report.pdf", "url": "/files/report123.pdf"}
+  ],
+  "notes": "Found calibration drift. Requires vendor visit."
+}
+⚙️ 5. Status Logic Enhancements
+Status	Color	Rule
+Pending	Blue	Created, not started
+In Progress	Yellow	Technician opened checklist
+Completed	Green	All checklist items done
+Overdue	Red	Due date < Today, not completed
+Backend logic example:
+if today > due_date and status != "Completed":
+    status = "Overdue"
+elif completed_steps < total_steps:
+    status = "In Progress"
+else:
+    status = "Completed"
+📈 6. Optional Add-ons
+✅ Timeline View: Horizontal timeline showing all task milestones (created, assigned, due, completed).
+✅ Technician Profile Card: Show photo, contact, and average completion time.
+✅ Export PDF Report: “Download Maintenance Report” button generates a PDF summary (using ReportLab or jsPDF).
+✅ Task Aging Highlight: Auto-sort list by overdue severity.
+✅ 7. Acceptance Criteria
+ Each maintenance task card shows equipment, facility, and location.
+ Status badges are color-coded and updated dynamically.
+ Clicking “View Details” opens a modal with full task data.
+ Checklist visually reflects completion status.
+ Attachments and technician notes displayed clearly.
+ Overdue tasks stand out visually.

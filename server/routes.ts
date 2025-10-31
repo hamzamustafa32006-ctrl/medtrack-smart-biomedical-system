@@ -9,6 +9,7 @@ import {
   insertMaintenanceRecordSchema,
   insertFacilitySchema,
   insertLocationSchema,
+  insertMaintenanceTaskSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -318,8 +319,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================
-  // Task Generation routes (Task 2)
+  // Maintenance Plans routes
   // ============================================
+
+  // Get all maintenance plans
+  app.get("/api/maintenance-plans", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { equipmentId } = req.query;
+      const plans = await storage.getMaintenancePlans(userId, equipmentId);
+      res.json(plans);
+    } catch (error) {
+      console.error("Error fetching maintenance plans:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance plans" });
+    }
+  });
+
+  // Get maintenance plan by ID
+  app.get("/api/maintenance-plans/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const plan = await storage.getMaintenancePlanById(id, userId);
+      
+      if (!plan) {
+        return res.status(404).json({ message: "Maintenance plan not found" });
+      }
+      
+      res.json(plan);
+    } catch (error) {
+      console.error("Error fetching maintenance plan:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance plan" });
+    }
+  });
+
+  // ============================================
+  // Maintenance Tasks routes (Task 3.1)
+  // ============================================
+
+  // Get all tasks with detailed information (joined data)
+  app.get("/api/maintenance-tasks", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { status, equipmentId, facilityId, locationId } = req.query;
+      const tasks = await storage.getMaintenanceTasksWithDetails(userId, {
+        status,
+        equipmentId,
+        facilityId,
+        locationId,
+      });
+      res.json(tasks);
+    } catch (error) {
+      console.error("Error fetching maintenance tasks:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance tasks" });
+    }
+  });
+
+  // Get task by ID with detailed information
+  app.get("/api/maintenance-tasks/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const task = await storage.getMaintenanceTaskWithDetails(id, userId);
+      
+      if (!task) {
+        return res.status(404).json({ message: "Maintenance task not found" });
+      }
+      
+      res.json(task);
+    } catch (error) {
+      console.error("Error fetching maintenance task:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance task" });
+    }
+  });
+
+  // Update task (status, notes, checklist, assignment)
+  app.patch("/api/maintenance-tasks/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const data = insertMaintenanceTaskSchema.partial().parse(req.body);
+      const task = await storage.updateMaintenanceTask(id, data, userId);
+      
+      if (!task) {
+        return res.status(404).json({ message: "Maintenance task not found" });
+      }
+      
+      res.json(task);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating maintenance task:", error);
+      res.status(500).json({ message: "Failed to update maintenance task" });
+    }
+  });
 
   // Generate/refresh maintenance tasks from plans
   app.post("/api/maintenance-tasks/generate", isAuthenticated, async (req: any, res) => {
