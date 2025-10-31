@@ -446,6 +446,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // Alert routes
+  // ============================================
+
+  // Get all alerts with detailed information (joined facility/location data)
+  app.get("/api/alerts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { status, severity, facilityId, startDate, endDate } = req.query;
+      
+      const filters: any = {};
+      if (status) filters.status = status;
+      if (severity) filters.severity = severity;
+      if (facilityId) filters.facilityId = facilityId;
+      if (startDate) filters.startDate = new Date(startDate as string);
+      if (endDate) filters.endDate = new Date(endDate as string);
+      
+      const alerts = await storage.getAlertsWithDetails(userId, filters);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error fetching alerts:", error);
+      res.status(500).json({ message: "Failed to fetch alerts" });
+    }
+  });
+
+  // Get unread alert count
+  app.get("/api/alerts/unread-count", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const count = await storage.getUnreadAlertCount(userId);
+      res.json({ count });
+    } catch (error) {
+      console.error("Error fetching unread alert count:", error);
+      res.status(500).json({ message: "Failed to fetch unread count" });
+    }
+  });
+
+  // Get alert by ID
+  app.get("/api/alerts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const alert = await storage.getAlertById(id, userId);
+      
+      if (!alert) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      
+      res.json(alert);
+    } catch (error) {
+      console.error("Error fetching alert:", error);
+      res.status(500).json({ message: "Failed to fetch alert" });
+    }
+  });
+
+  // Acknowledge alert
+  app.patch("/api/alerts/:id/acknowledge", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const alert = await storage.acknowledgeAlert(id, userId);
+      
+      if (!alert) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      
+      res.json(alert);
+    } catch (error) {
+      console.error("Error acknowledging alert:", error);
+      res.status(500).json({ message: "Failed to acknowledge alert" });
+    }
+  });
+
+  // Resolve alert
+  app.patch("/api/alerts/:id/resolve", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const alert = await storage.resolveAlert(id, userId);
+      
+      if (!alert) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      
+      res.json(alert);
+    } catch (error) {
+      console.error("Error resolving alert:", error);
+      res.status(500).json({ message: "Failed to resolve alert" });
+    }
+  });
+
+  // Escalate alert
+  app.patch("/api/alerts/:id/escalate", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const alert = await storage.escalateAlert(id, userId);
+      
+      if (!alert) {
+        return res.status(404).json({ message: "Alert not found" });
+      }
+      
+      res.json(alert);
+    } catch (error) {
+      console.error("Error escalating alert:", error);
+      res.status(500).json({ message: "Failed to escalate alert" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

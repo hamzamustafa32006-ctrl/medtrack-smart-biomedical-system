@@ -92,12 +92,15 @@ export interface IStorage {
   
   // Alert operations
   getAlerts(userId: string, filters?: { status?: string; severity?: string }): Promise<Alert[]>;
+  getAlertsWithDetails(userId: string, filters?: { status?: string; severity?: string; facilityId?: string; startDate?: Date; endDate?: Date }): Promise<any[]>;
+  getUnreadAlertCount(userId: string): Promise<number>;
   getAlertById(id: string, userId: string): Promise<Alert | undefined>;
   createAlert(data: InsertAlert, userId: string): Promise<Alert>;
   updateAlert(id: string, data: Partial<InsertAlert>, userId: string): Promise<Alert | undefined>;
   acknowledgeAlert(id: string, userId: string): Promise<Alert | undefined>;
   snoozeAlert(id: string, userId: string, snoozedUntil: Date): Promise<Alert | undefined>;
   resolveAlert(id: string, userId: string): Promise<Alert | undefined>;
+  escalateAlert(id: string, userId: string): Promise<Alert | undefined>;
   
   // Notification log operations
   getNotificationLogs(userId: string, alertId?: string): Promise<NotificationLog[]>;
@@ -930,7 +933,12 @@ export class DatabaseStorage implements IStorage {
   async acknowledgeAlert(id: string, userId: string): Promise<Alert | undefined> {
     const [alert] = await db
       .update(alerts)
-      .set({ status: 'acknowledged', updatedAt: new Date() })
+      .set({ 
+        status: 'acknowledged', 
+        acknowledgedBy: userId,
+        acknowledgedAt: new Date(),
+        updatedAt: new Date() 
+      })
       .where(and(eq(alerts.id, id), eq(alerts.userId, userId)))
       .returning();
     return alert;
@@ -956,10 +964,122 @@ export class DatabaseStorage implements IStorage {
   async resolveAlert(id: string, userId: string): Promise<Alert | undefined> {
     const [alert] = await db
       .update(alerts)
-      .set({ status: 'resolved', updatedAt: new Date() })
+      .set({ 
+        status: 'resolved', 
+        resolvedAt: new Date(),
+        updatedAt: new Date() 
+      })
       .where(and(eq(alerts.id, id), eq(alerts.userId, userId)))
       .returning();
     return alert;
+  }
+
+  async escalateAlert(id: string, userId: string): Promise<Alert | undefined> {
+    const existing = await this.getAlertById(id, userId);
+    if (!existing) return undefined;
+
+    const [alert] = await db
+      .update(alerts)
+      .set({ 
+        status: 'escalated',
+        escalationLevel: existing.escalationLevel + 1,
+        updatedAt: new Date() 
+      })
+      .where(and(eq(alerts.id, id), eq(alerts.userId, userId)))
+      .returning();
+    return alert;
+  }
+
+  async getAlertsWithDetails(
+    userId: string,
+    filters?: { status?: string; severity?: string; facilityId?: string; startDate?: Date; endDate?: Date }
+  ): Promise<any[]> {
+    const alertsData = await db
+      .select({
+        id: alerts.id,
+        userId: alerts.userId,
+        entityType: alerts.entityType,
+        entityId: alerts.entityId,
+        severity: alerts.severity,
+        title: alerts.title,
+        message: alerts.message,
+        status: alerts.status,
+        acknowledgedBy: alerts.acknowledgedBy,
+        acknowledgedAt: alerts.acknowledgedAt,
+        resolvedAt: alerts.resolvedAt,
+        firstTriggeredAt: alerts.firstTriggeredAt,
+        escalationLevel: alerts.escalationLevel,
+        createdAt: alerts.createdAt,
+        facilityId: facilities.id,
+        facilityName: facilities.name,
+        facilityCode: facilities.code,
+        locationId: locations.id,
+        locationName: locations.name,
+        acknowledgedByUserFirstName: users.firstName,
+        acknowledgedByUserLastName: users.lastName,
+        equipmentId: equipment.id,
+        equipmentName: equipment.name,
+        equipmentIdCode: equipment.equipmentId,
+        equipmentType: equipment.type,
+        taskId: maintenanceTasks.id,
+        taskDueDate: maintenanceTasks.dueDate,
+        taskStatus: maintenanceTasks.status,
+        taskPriority: maintenanceTasks.priority,
+        contractId: contracts.id,
+        contractVendorName: contracts.vendorName,
+        contractEndDate: contracts.endDate,
+        contractType: contracts.contractType,
+      })
+      .from(alerts)
+      .leftJoin(facilities, eq(alerts.facilityId, facilities.id))
+      .leftJoin(locations, eq(alerts.locationId, locations.id))
+      .leftJoin(users, eq(alerts.acknowledgedBy, users.id))
+      .leftJoin(equipment, eq(alerts.entityId, equipment.id))
+      .leftJoin(maintenanceTasks, eq(alerts.entityId, maintenanceTasks.id))
+      .leftJoin(contracts, eq(alerts.entityId, contracts.id))
+      .where(eq(alerts.userId, userId))
+      .orderBy(desc(alerts.createdAt));
+
+    // Apply filters
+    let filteredAlerts = alertsData;
+
+    if (filters?.status) {
+      filteredAlerts = filteredAlerts.filter(alert => alert.status === filters.status);
+    }
+
+    if (filters?.severity) {
+      filteredAlerts = filteredAlerts.filter(alert => alert.severity === filters.severity);
+    }
+
+    if (filters?.facilityId) {
+      filteredAlerts = filteredAlerts.filter(alert => alert.facilityId === filters.facilityId);
+    }
+
+    if (filters?.startDate) {
+      filteredAlerts = filteredAlerts.filter(alert => 
+        alert.createdAt && new Date(alert.createdAt) >= filters.startDate!
+      );
+    }
+
+    if (filters?.endDate) {
+      filteredAlerts = filteredAlerts.filter(alert => 
+        alert.createdAt && new Date(alert.createdAt) <= filters.endDate!
+      );
+    }
+
+    return filteredAlerts;
+  }
+
+  async getUnreadAlertCount(userId: string): Promise<number> {
+    const unreadAlerts = await db
+      .select()
+      .from(alerts)
+      .where(and(
+        eq(alerts.userId, userId),
+        eq(alerts.status, 'open')
+      ));
+    
+    return unreadAlerts.length;
   }
 
   // ============================================
