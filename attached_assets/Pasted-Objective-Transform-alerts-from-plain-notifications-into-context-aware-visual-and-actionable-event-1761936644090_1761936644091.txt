@@ -1,0 +1,145 @@
+Objective
+Transform alerts from plain notifications into context-aware, visual, and actionable events that clearly communicate:
+What happened
+Why it matters
+Who needs to act
+When it must be resolved
+🧠 2. Backend Improvements (Handling Logic)
+A. Add Rich Alert Schema
+Enhance your alerts table to store all contextual data:
+CREATE TABLE alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type TEXT CHECK (entity_type IN ('Equipment', 'MaintenanceTask', 'Contract')),
+  entity_id UUID NOT NULL,
+  severity TEXT CHECK (severity IN ('Info', 'Warning', 'Critical')) DEFAULT 'Info',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  status TEXT CHECK (status IN ('Open', 'Acknowledged', 'Resolved', 'Escalated')) DEFAULT 'Open',
+  triggered_at TIMESTAMP DEFAULT NOW(),
+  acknowledged_by UUID REFERENCES users(id),
+  acknowledged_at TIMESTAMP,
+  resolved_at TIMESTAMP,
+  escalation_level INT DEFAULT 0
+);
+B. Intelligent Alert Generation
+Generate alerts based on thresholds:
+Equipment due for maintenance in 7 days → Warning
+Overdue > 3 days → Critical
+Contract expired → Info
+Merge duplicate alerts (prevent spam):
+key = f"{entity_type}:{entity_id}:{severity}"
+if not redis.exists(key):
+    create_alert(...)
+    redis.setex(key, timedelta(hours=6), "sent")
+Auto-escalate critical alerts to supervisors:
+if alert.severity == 'Critical' and days_overdue > 7:
+    alert.status = 'Escalated'
+    notify_supervisor(alert)
+C. Alert Lifecycle States
+State	Description	Trigger
+Open	New alert created	Maintenance overdue, task missed
+Acknowledged	User viewed it	User clicks “Acknowledge”
+Resolved	Issue fixed	Related task marked completed
+Escalated	Ignored critical alert	System auto-escalates
+🖥️ 3. Frontend — Alert Center UI
+Turn alerts into a centralized “Alert Center” view accessible from the navbar (like a bell icon).
+🔔 A. Alert Badge (Navbar)
+Red badge with count of unread alerts
+Tooltip: “You have 3 new alerts”
+<NotificationBell count={alerts.filter(a => a.status === "Open").length} />
+🧩 B. Alert Drawer (Quick View)
+When user clicks the bell icon → slide-in panel (drawer) shows latest alerts.
+<Drawer title="Maintenance Alerts" placement="right" onClose={closeDrawer} open={show}>
+  {alerts.map(a => (
+    <AlertCard key={a.id} alert={a} onAcknowledge={acknowledgeAlert} />
+  ))}
+</Drawer>
+🧾 C. AlertCard Component (Detailed View)
+export function AlertCard({ alert, onAcknowledge }) {
+  const color =
+    alert.severity === 'Critical' ? 'border-red-500 bg-red-50' :
+    alert.severity === 'Warning' ? 'border-yellow-500 bg-yellow-50' :
+    'border-blue-500 bg-blue-50';
+
+  return (
+    <div className={`p-4 mb-3 rounded-xl border-l-4 ${color}`}>
+      <div className="flex justify-between items-center">
+        <h4 className="font-semibold">{alert.title}</h4>
+        <StatusBadge status={alert.severity} />
+      </div>
+      <p className="text-sm text-gray-600 mt-1">{alert.message}</p>
+      <p className="text-xs text-gray-500 mt-1">
+        {alert.facility_name} • {alert.location_name} • {formatDate(alert.triggered_at)}
+      </p>
+
+      <div className="flex gap-2 mt-2">
+        <button
+          className="text-blue-600 text-xs"
+          onClick={() => openRelated(alert.entity_type, alert.entity_id)}>
+          View Details
+        </button>
+        {alert.status === 'Open' && (
+          <button
+            className="text-green-600 text-xs"
+            onClick={() => onAcknowledge(alert.id)}>
+            Acknowledge
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+🧱 D. Full Alert Page (Dashboard View)
+A table with filters:
+Column	Description
+Severity	Colored icon (🟥 Critical / 🟨 Warning / 🟦 Info)
+Title	Clickable → opens task/equipment
+Facility	Facility name
+Location	Location name
+Status	Open / Acknowledged / Resolved
+Triggered	Date & time
+Add filters at the top:
+Facility
+Severity
+Status
+Date range
+📣 4. User Notifications
+Make alerts truly noticeable via multiple channels:
+In-app: Bell icon badge + toast notifications
+Email/SMS (optional): For Critical alerts
+Push (PWA): “⚠️ Ventilator overdue for maintenance in ICU Room 3”
+Use:
+navigator.serviceWorker.ready.then(sw =>
+  sw.showNotification("Critical Alert", {
+    body: "Ventilator V-900 is 3 days overdue in ICU Room 3",
+    icon: "/alert-icon.png"
+  })
+);
+🔄 5. Automatic Resolution Sync
+When a related maintenance task is marked Completed, automatically resolve associated alerts:
+UPDATE alerts
+SET status='Resolved', resolved_at=NOW()
+WHERE entity_type='MaintenanceTask' AND entity_id=:task_id AND status!='Resolved';
+🧩 6. Color & Severity Coding
+Severity	Color	Icon	Example
+Critical	🔴 Red	⚠️	Overdue > 3 days, risk of failure
+Warning	🟡 Yellow	⏳	Due soon (≤ 7 days)
+Info	🔵 Blue	ℹ️	Scheduled / new update
+This makes it visually intuitive even for mobile dashboards.
+📊 7. Analytics Dashboard (optional add-on)
+Add a widget to your dashboard:
+Open Alerts by Severity (bar chart)
+Alerts by Facility (heat map)
+Response Time per Technician (line chart)
+Example metric query:
+SELECT severity, COUNT(*) FROM alerts WHERE status='Open' GROUP BY severity;
+✅ 8. Acceptance Criteria
+ Alerts show severity, facility, location, and linked entity
+ Alerts are color-coded with icons
+ Drawer and full dashboard view both functional
+ Clicking an alert opens related equipment/task
+ Acknowledge / Resolve updates status instantly
+ Auto-resolve when task completed
+ Critical alerts trigger push/email notifications

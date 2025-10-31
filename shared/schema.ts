@@ -377,10 +377,15 @@ export const alerts = pgTable("alerts", {
     .references(() => users.id, { onDelete: "cascade" }),
   entityType: varchar("entity_type", { length: 50 }).notNull(), // "task", "contract", "equipment"
   entityId: varchar("entity_id").notNull(), // ID of related entity
+  facilityId: varchar("facility_id").references(() => facilities.id, { onDelete: "cascade" }), // Context: which facility
+  locationId: varchar("location_id").references(() => locations.id, { onDelete: "set null" }), // Context: which location
   severity: varchar("severity", { length: 50 }).notNull().default("info"), // info, warning, critical
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message").notNull(),
-  status: varchar("status", { length: 50 }).notNull().default("open"), // open, acknowledged, snoozed, resolved
+  status: varchar("status", { length: 50 }).notNull().default("open"), // open, acknowledged, snoozed, resolved, escalated
+  acknowledgedBy: varchar("acknowledged_by").references(() => users.id, { onDelete: "set null" }), // Who acknowledged
+  acknowledgedAt: timestamp("acknowledged_at"), // When acknowledged
+  resolvedAt: timestamp("resolved_at"), // When resolved
   firstTriggeredAt: timestamp("first_triggered_at").defaultNow(),
   lastSentAt: timestamp("last_sent_at"),
   nextRetryAt: timestamp("next_retry_at"),
@@ -394,11 +399,24 @@ export const alerts = pgTable("alerts", {
   index("alerts_entity_idx").on(table.entityType, table.entityId),
   index("alerts_status_idx").on(table.status),
   index("alerts_severity_idx").on(table.severity),
+  index("alerts_facility_idx").on(table.facilityId),
 ]);
 
 export const alertsRelations = relations(alerts, ({ one, many }) => ({
   user: one(users, {
     fields: [alerts.userId],
+    references: [users.id],
+  }),
+  facility: one(facilities, {
+    fields: [alerts.facilityId],
+    references: [facilities.id],
+  }),
+  location: one(locations, {
+    fields: [alerts.locationId],
+    references: [locations.id],
+  }),
+  acknowledgedByUser: one(users, {
+    fields: [alerts.acknowledgedBy],
     references: [users.id],
   }),
   notificationLogs: many(notificationLogs),
