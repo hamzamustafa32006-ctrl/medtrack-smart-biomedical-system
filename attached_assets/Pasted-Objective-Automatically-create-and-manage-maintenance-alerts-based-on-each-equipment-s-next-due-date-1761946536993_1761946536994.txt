@@ -1,0 +1,173 @@
+Objective
+Automatically create and manage maintenance alerts based on each equipment’s next_due_date, so the system can:
+Warn users before a maintenance deadline
+Escalate if maintenance becomes overdue
+Automatically resolve alerts once maintenance is completed
+🧱 2. Database Schema Updates
+🔹 Equipment Table (already exists)
+Ensure these fields exist:
+ALTER TABLE equipment
+ADD COLUMN last_maintenance_date DATE,
+ADD COLUMN next_due_date DATE,
+ADD COLUMN status TEXT CHECK (status IN ('Active','Under Maintenance','Decommissioned')) DEFAULT 'Active';
+🔹 Maintenance Alerts Table
+(If not already created)
+CREATE TABLE maintenance_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id),
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  severity TEXT CHECK (severity IN ('Info','Warning','Critical')) DEFAULT 'Info',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  due_date DATE,
+  triggered_at TIMESTAMP DEFAULT NOW(),
+  status TEXT CHECK (status IN ('Open','Acknowledged','Resolved')) DEFAULT 'Open',
+  resolved_at TIMESTAMP
+);
+⚙️ 3. Backend Logic — Daily Automatic Alert Generation
+Use a scheduled job (cron job or background worker) that runs daily (e.g., midnight) to check all active equipment and auto-create alerts.
+Example (Python / FastAPI + APScheduler)
+from datetime import date
+from database import query, execute
+
+def check_and_generate_alerts():
+    today = date.today()
+    equipment_list = query("""
+        SELECT id, name, facility_id, location_id, next_due_date
+        FROM equipment
+        WHERE status != 'Decommissioned'
+    """)
+
+    for e in equipment_list:
+        if not e["next_due_date"]:
+            continue
+
+        days_left = (e["next_due_date"] - today).days
+
+        # Determine alert type
+        if days_left == 7:
+            create_alert(e, "Warning", f"Maintenance due soon for {e['name']}", f"{e['name']} maintenance is due in 7 days.")
+        elif 0 < days_left < 7:
+            create_alert(e, "Info", f"Upcoming maintenance for {e['name']}", f"Maintenance due in {days_left} days.")
+        elif days_left <= 0:
+            create_alert(e, "Critical", f"Overdue maintenance: {e['name']}", f"{e['name']} maintenance is {abs(days_left)} days overdue!")
+
+def create_alert(equipment, severity, title, message):
+    # Avoid duplicates
+    exists = query("""
+        SELECT id FROM maintenance_alerts
+        WHERE equipment_id = %s AND status='Open' AND severity=%s
+    """, [equipment["id"], severity])
+    if exists:
+        return
+
+    execute("""
+        INSERT INTO maintenance_alerts (equipment_id, facility_id, location_id, severity, title, message, due_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, [
+        equipment["id"],
+        equipment["facility_id"],
+        equipment["location_id"],
+        severity,
+        title,
+        message,
+        equipment["next_due_date"]
+    ])
+✅ Runs daily
+✅ Generates new alerts only when needed
+✅ Prevents duplicate alerts for the same condition
+🕐 4. Automation Schedule (Node.js alternative)
+If you’re using Node.js:
+Use node-cron or BullMQ.
+import cron from 'node-cron';
+import { db } from './db.js';
+import dayjs from 'dayjs';
+
+cron.schedule('0 0 * * *', async () => { // every midnight
+  const today = dayjs().format('YYYY-MM-DD');
+  const equipment = await db.query('SELECT * FROM equipment WHERE status != $1', ['Decommissioned']);
+  
+  for (const e of equipment.rows) {
+    if (!e.next_due_date) continue;
+    const daysLeft = dayjs(e.next_due_date).diff(today, 'day');
+
+    if (daysLeft <= 0) {
+      await generateAlert(e, 'Critical', `Overdue maintenance: ${e.name}`, `${e.name} is ${Math.abs(daysLeft)} days overdue.`);
+    } else if (daysLeft <= 7) {
+      await generateAlert(e, 'Warning', `Maintenance due soon: ${e.name}`, `Due in ${daysLeft} days.`);
+    }
+  }
+});
+
+async function generateAlert(e, severity, title, message) {
+  const existing = await db.query(
+    'SELECT id FROM maintenance_alerts WHERE equipment_id=$1 AND status=$2 AND severity=$3',
+    [e.id, 'Open', severity]
+  );
+  if (existing.rowCount === 0) {
+    await db.query(
+      'INSERT INTO maintenance_alerts (equipment_id, facility_id, location_id, severity, title, message, due_date) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [e.id, e.facility_id, e.location_id, severity, title, message, e.next_due_date]
+    );
+  }
+}
+🔄 5. Auto-Resolution Logic
+When a maintenance task for an equipment is completed, mark its alerts as resolved automatically.
+def resolve_alerts_for_equipment(equipment_id):
+    execute("""
+        UPDATE maintenance_alerts
+        SET status='Resolved', resolved_at=NOW()
+        WHERE equipment_id=%s AND status='Open'
+    """, [equipment_id])
+This ensures old alerts disappear once the issue is handled ✅
+🔔 6. Frontend Integration (Alert Center)
+The generated alerts will feed directly into your Alert Center UI:
+Example API Response
+[
+  {
+    "id": "al-102",
+    "equipment_name": "Ventilator V900",
+    "severity": "Critical",
+    "message": "Overdue maintenance by 3 days.",
+    "due_date": "2025-11-05",
+    "facility_name": "AASU Hospital",
+    "location_name": "ICU Room 3",
+    "status": "Open"
+  }
+]
+Display in React
+<AlertCard severity={a.severity} title={a.title} message={a.message} facility={a.facility_name} />
+Each alert card is color-coded:
+Severity	Color	Icon
+Critical	🔴 Red	⚠️
+Warning	🟡 Yellow	⏳
+Info	🔵 Blue	ℹ️
+✅ Click opens equipment details
+✅ Acknowledge / Resolve buttons update alert status instantly
+📊 7. Dashboard Enhancements
+Add widgets:
+Metric	Example
+🔴 Critical Alerts	3
+🟡 Due Soon	6
+🟢 Resolved	15
+🧰 Total Equipment	128
+Add chart: Alerts by Facility (bar or pie).
+🧠 8. Optional Smart Features
+Feature	Description
+Escalation Rules	Auto-email supervisors if a critical alert stays unresolved > 3 days
+Predictive AI Alerts	Use usage frequency + history to predict early maintenance
+Calendar Sync	Add next maintenance date to Google Calendar
+Push Notifications	Send live alerts to technicians’ phones (Firebase / OneSignal)
+✅ 9. Acceptance Criteria
+ Automatic daily scan of all active equipment
+ Alerts created when maintenance is due or overdue
+ No duplicate alerts generated
+ Resolved alerts automatically closed when maintenance completes
+ Alerts visible in Alert Center with severity color coding
+ Alerts refresh dynamically on dashboard
+🚀 10. Optional Expansion
+Later, you can combine this system with:
+Predictive Maintenance Engine (AI-based)
+Spare Part Tracking (link alerts to required parts)
+Technician Assignment Automation

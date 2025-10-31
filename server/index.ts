@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import cron from "node-cron";
+import { generateMaintenanceAlerts } from "./alertService";
 
 const app = express();
 
@@ -48,6 +50,26 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // Setup daily maintenance alert generation scheduler
+  // Runs every day at midnight (Kuwait timezone: Asia/Kuwait UTC+3)
+  cron.schedule('0 0 * * *', async () => {
+    try {
+      log('[SCHEDULER] Starting daily maintenance alert generation...');
+      const result = await generateMaintenanceAlerts();
+      log(`[SCHEDULER] Alert generation complete: ${result.created} created, ${result.skipped} skipped${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`);
+      
+      if (result.errors.length > 0) {
+        console.error('[SCHEDULER] Alert generation errors:', result.errors);
+      }
+    } catch (error) {
+      console.error('[SCHEDULER] Daily alert generation failed:', error);
+    }
+  }, {
+    timezone: "Asia/Kuwait" // Run in Kuwait timezone
+  });
+
+  log('[SCHEDULER] Daily maintenance alert scheduler initialized (runs at midnight Kuwait time)');
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
