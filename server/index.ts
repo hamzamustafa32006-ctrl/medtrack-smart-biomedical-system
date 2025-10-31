@@ -57,7 +57,7 @@ app.use((req, res, next) => {
     try {
       log('[SCHEDULER] Starting daily maintenance alert generation...');
       const result = await generateMaintenanceAlerts();
-      log(`[SCHEDULER] Alert generation complete: ${result.created} created, ${result.skipped} skipped${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`);
+      log(`[SCHEDULER] Alert generation complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`);
       
       if (result.errors.length > 0) {
         console.error('[SCHEDULER] Alert generation errors:', result.errors);

@@ -652,7 +652,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         success: true,
-        message: `Alert generation complete: ${result.created} created, ${result.skipped} skipped`,
+        message: `Alert generation complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`,
         ...result,
       });
     } catch (error) {

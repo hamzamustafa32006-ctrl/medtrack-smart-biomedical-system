@@ -7,6 +7,7 @@ import { equipment, alerts, facilities, locations } from "@shared/schema";
 
 interface AlertGenerationResult {
   created: number;
+  updated: number;
   skipped: number;
   errors: string[];
 }
@@ -18,6 +19,7 @@ interface AlertGenerationResult {
 export async function generateMaintenanceAlerts(userId?: string): Promise<AlertGenerationResult> {
   const result: AlertGenerationResult = {
     created: 0,
+    updated: 0,
     skipped: 0,
     errors: [],
   };
@@ -97,8 +99,9 @@ export async function generateMaintenanceAlerts(userId?: string): Promise<AlertG
       // UPSERT pattern: Insert or update existing alert
       // Uses UNIQUE constraint on (entityType, entityId, userId) WHERE status IN ('open', 'escalated')
       // This automatically upgrades severity (Info → Warning → Critical) as due date approaches
+      // Uses RETURNING with xmax = 0 to atomically detect insert vs update
       try {
-        await db
+        const [result_row] = await db
           .insert(alerts)
           .values({
             userId: equip.userId,
@@ -122,9 +125,19 @@ export async function generateMaintenanceAlerts(userId?: string): Promise<AlertG
               message,
               updatedAt: new Date(),
             },
+          })
+          .returning({
+            id: alerts.id,
+            // xmax = 0 means newly inserted row, xmax > 0 means updated row
+            wasInserted: sql<boolean>`(xmax = 0)`,
           });
 
-        result.created++;
+        // Atomically track whether this was a new alert or an update
+        if (result_row.wasInserted) {
+          result.created++;
+        } else {
+          result.updated++;
+        }
       } catch (error) {
         result.errors.push(`Failed to create/update alert for ${equip.name}: ${error}`);
       }
