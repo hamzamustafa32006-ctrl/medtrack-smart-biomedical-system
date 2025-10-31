@@ -118,8 +118,52 @@ export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type Location = typeof locations.$inferSelect;
 
 // ============================================
+// Vendors Table
+// ============================================
+
+export const vendors = pgTable("vendors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  contact: varchar("contact", { length: 255 }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const vendorsRelations = relations(vendors, ({ one, many }) => ({
+  user: one(users, {
+    fields: [vendors.userId],
+    references: [users.id],
+  }),
+  equipment: many(equipment),
+}));
+
+export const insertVendorSchema = createInsertSchema(vendors).omit({
+  id: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVendor = z.infer<typeof insertVendorSchema>;
+export type Vendor = typeof vendors.$inferSelect;
+
+// ============================================
 // Equipment Table
 // ============================================
+
+// Equipment status enum - matches database values
+export const equipmentStatusEnum = z.enum(["Active", "Under Maintenance", "Decommissioned", "Pending Installation"]);
+export type EquipmentStatus = z.infer<typeof equipmentStatusEnum>;
+
+// Equipment criticality enum
+export const equipmentCriticalityEnum = z.enum(["Low", "Medium", "High"]);
+export type EquipmentCriticality = z.infer<typeof equipmentCriticalityEnum>;
 
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -128,6 +172,7 @@ export const equipment = pgTable("equipment", {
     .references(() => users.id, { onDelete: "cascade" }),
   facilityId: varchar("facility_id").references(() => facilities.id, { onDelete: "set null" }),
   locationId: varchar("location_id").references(() => locations.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
   name: varchar("name", { length: 255 }).notNull(),
   equipmentId: varchar("equipment_id", { length: 100 }), // Custom ID like EQ-001, auto-generated
   location: varchar("location", { length: 255 }), // Legacy field for backward compatibility
@@ -135,18 +180,22 @@ export const equipment = pgTable("equipment", {
   manufacturer: varchar("manufacturer", { length: 255 }),
   model: varchar("model", { length: 255 }),
   serial: varchar("serial", { length: 255 }),
-  status: varchar("status", { length: 50 }).notNull().default("active"), // active, inactive, maintenance, retired
-  criticality: varchar("criticality", { length: 50 }).default("medium"), // low, medium, high, critical
+  status: varchar("status", { length: 50 }).notNull().default("Active"), // Active, Under Maintenance, Decommissioned, Pending Installation
+  criticality: varchar("criticality", { length: 50 }).default("Medium"), // Low, Medium, High
   barcode: varchar("barcode", { length: 100 }),
   installDate: timestamp("install_date"),
+  purchaseDate: timestamp("purchase_date"),
+  warrantyExpiryDate: timestamp("warranty_expiry_date"),
   maintenanceFrequencyDays: integer("maintenance_frequency_days"), // How often maintenance is needed
   lastMaintenanceDate: timestamp("last_maintenance_date"),
+  nextDueDate: timestamp("next_due_date"), // Next maintenance due date (can be computed or manually set)
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("equipment_user_idx").on(table.userId),
   index("equipment_facility_idx").on(table.facilityId),
+  index("equipment_vendor_idx").on(table.vendorId),
   index("equipment_status_idx").on(table.status),
 ]);
 
@@ -163,6 +212,10 @@ export const equipmentRelations = relations(equipment, ({ one, many }) => ({
     fields: [equipment.locationId],
     references: [locations.id],
   }),
+  vendor: one(vendors, {
+    fields: [equipment.vendorId],
+    references: [vendors.id],
+  }),
   contracts: many(contracts),
   maintenanceRecords: many(maintenanceRecords),
   maintenancePlans: many(maintenancePlans),
@@ -174,6 +227,9 @@ export const insertEquipmentSchema = createInsertSchema(equipment).omit({
   userId: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  status: equipmentStatusEnum.optional(),
+  criticality: equipmentCriticalityEnum.optional(),
 });
 
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;

@@ -32,7 +32,8 @@ const contractFormSchema = insertContractSchema.extend({
   alertThresholdDays: z.coerce.number().int().positive().default(30),
 });
 
-const locationFormSchema = insertLocationSchema.omit({ id: true, userId: true });
+// insertLocationSchema already omits id, createdAt, updatedAt
+const locationFormSchema = insertLocationSchema;
 
 export default function EquipmentPage() {
   const { toast } = useToast();
@@ -86,7 +87,7 @@ export default function EquipmentPage() {
   });
 
   // Clear location selection when facility changes (but not on initial render)
-  const prevFacilityIdRef = useRef<string | undefined>();
+  const prevFacilityIdRef = useRef<string | null | undefined>();
   useEffect(() => {
     if (prevFacilityIdRef.current !== undefined && prevFacilityIdRef.current !== selectedFacilityId) {
       equipmentForm.setValue("locationId", "");
@@ -183,11 +184,11 @@ export default function EquipmentPage() {
     },
   });
 
-  const createLocationMutation = useMutation({
+  const createLocationMutation = useMutation<Location, Error, z.infer<typeof locationFormSchema>>({
     mutationFn: async (data: z.infer<typeof locationFormSchema>) => {
-      return await apiRequest("POST", `/api/facilities/${data.facilityId}/locations`, data);
+      return (await apiRequest("POST", `/api/facilities/${data.facilityId}/locations`, data)) as unknown as Location;
     },
-    onSuccess: (newLocation: Location, variables) => {
+    onSuccess: (newLocation, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/facilities", variables.facilityId, "locations"] });
       setLocationDialogOpen(false);
       locationForm.reset();
@@ -307,7 +308,7 @@ export default function EquipmentPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Facility *</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value || undefined}>
                           <FormControl>
                             <SelectTrigger data-testid="select-facility">
                               <SelectValue placeholder="Select facility" />
@@ -336,7 +337,7 @@ export default function EquipmentPage() {
                       <FormItem>
                         <FormLabel>Location *</FormLabel>
                         <div className="flex gap-2">
-                          <Select onValueChange={field.onChange} value={field.value} disabled={!selectedFacilityId}>
+                          <Select onValueChange={field.onChange} value={field.value || undefined} disabled={!selectedFacilityId}>
                             <FormControl>
                               <SelectTrigger data-testid="select-location" className="flex-1">
                                 <SelectValue placeholder={selectedFacilityId ? "Select location" : "Select facility first"} />

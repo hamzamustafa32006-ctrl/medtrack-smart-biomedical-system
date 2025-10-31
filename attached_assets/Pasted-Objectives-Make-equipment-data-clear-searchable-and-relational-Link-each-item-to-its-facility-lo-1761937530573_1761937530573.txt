@@ -1,0 +1,175 @@
+Objectives
+Make equipment data clear, searchable, and relational.
+Link each item to its facility, location, vendor, and maintenance status.
+Allow quick filtering and sorting by any key attribute.
+Present details visually (status colors, icons, QR tags).
+🧱 2. Improved Data Model
+Your equipment table should be normalized and contextualized.
+✅ Updated Schema
+CREATE TABLE equipment (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id_code TEXT UNIQUE,
+  name TEXT NOT NULL,
+  type TEXT,
+  manufacturer TEXT,
+  model TEXT,
+  serial_number TEXT,
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  vendor_id UUID REFERENCES vendors(id),
+  status TEXT CHECK (status IN ('Active','Under Maintenance','Decommissioned','Pending Installation')) DEFAULT 'Active',
+  last_maintenance_date DATE,
+  next_due_date DATE,
+  criticality TEXT CHECK (criticality IN ('Low','Medium','High')) DEFAULT 'Medium',
+  purchase_date DATE,
+  warranty_expiry DATE,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+✅ Relations
+Each equipment links to a facility, location, and vendor.
+Each has computed status & maintenance cycle.
+Add next_due_date so the frontend can color-code urgency.
+💡 3. Smarter Categorization
+Organize by these top-level categories:
+Category	Examples
+Diagnostic Equipment	X-Ray, MRI, Ultrasound
+Life Support	Ventilators, Defibrillators
+Monitoring	Patient Monitors, ECG
+Therapeutic	Infusion Pumps
+Laboratory	Hematology Analyzer, Centrifuge
+Use type field + tags to auto-group.
+🧭 4. Equipment Dashboard Layout (Frontend)
+A. Table View (Main Listing)
+Transform the old static table into a responsive, filterable Data Grid.
+Columns
+Column	Description
+ID	QR / Code
+Name	Equipment Name
+Type	Category
+Facility	Facility Name
+Location	Department / Room
+Status	Color Badge (Active / Maintenance / Overdue)
+Next Maintenance	Date + Countdown
+Criticality	Chip color (🔴 High / 🟡 Medium / 🟢 Low)
+Actions	View / Edit / Delete
+Example (React + Tailwind)
+<Table>
+  <Thead>
+    <Tr>
+      <Th>ID</Th><Th>Name</Th><Th>Type</Th><Th>Facility</Th>
+      <Th>Location</Th><Th>Status</Th><Th>Next Maintenance</Th>
+    </Tr>
+  </Thead>
+  <Tbody>
+    {equipment.map(e => (
+      <Tr key={e.id} className="hover:bg-gray-50">
+        <Td><QrIcon /> {e.equipment_id_code}</Td>
+        <Td>{e.name}</Td>
+        <Td>{e.type}</Td>
+        <Td>{e.facility_name}</Td>
+        <Td>{e.location_name}</Td>
+        <Td><StatusBadge status={e.status} /></Td>
+        <Td>{formatDate(e.next_due_date)} <Countdown date={e.next_due_date} /></Td>
+      </Tr>
+    ))}
+  </Tbody>
+</Table>
+✅ Add sorting, search, and column filtering using libraries like:
+react-table
+MUI DataGrid
+TanStack Table v8
+B. Equipment Detail View (Drawer / Modal)
+When clicking an equipment item, open a detailed pane:
+Section	Data
+Header	Name, type, status badge, criticality color
+Identification	ID, serial, model, manufacturer
+Maintenance Info	Last maintenance, next due, technician
+Facility/Location	Facility name, floor, room
+Attachments	User manuals, reports
+QR Code	Scannable for mobile access
+Recent Tasks	Last 3 maintenance tasks with status
+Example (React)
+<Drawer open={showDetails} onClose={() => setShowDetails(false)}>
+  <h2 className="text-xl font-bold mb-2">{equipment.name}</h2>
+  <StatusBadge status={equipment.status} />
+  <p><b>Type:</b> {equipment.type}</p>
+  <p><b>Facility:</b> {equipment.facility_name}</p>
+  <p><b>Location:</b> {equipment.location_name}</p>
+  <p><b>Next Maintenance:</b> {formatDate(equipment.next_due_date)}</p>
+  <Divider />
+  <h3 className="font-semibold mt-3">Recent Maintenance</h3>
+  <ul className="list-disc ml-4">
+    {equipment.recent_tasks.map(t => (
+      <li key={t.id}>{t.status} – {formatDate(t.due_date)}</li>
+    ))}
+  </ul>
+</Drawer>
+🎯 5. Color-Coded Visual Cues
+Status	Color	Meaning
+Active	🟢 Green	Operational
+Under Maintenance	🟡 Yellow	In service / testing
+Overdue	🔴 Red	Missed maintenance date
+Decommissioned	⚫ Gray	Retired
+🔍 6. Smart Filtering & Search
+Filters at top of Equipment page:
+Filter	Examples
+Facility	“AASU Hospital”
+Location	“Radiology Dept.”
+Type	Diagnostic / Monitoring
+Criticality	High / Medium / Low
+Status	Active / Overdue / Maintenance
+Search box supports:
+"ventilator icu"
+→ searches across name, model, location.
+🧾 7. Data Grouping Options
+Add view toggles:
+List View → detailed table (default)
+Grid View → cards with icons and stats
+Grouped View → by facility or equipment type
+Example grouped by Facility:
+<Group>
+  <h3>AASU Hospital</h3>
+  {equipment.filter(e => e.facility_name === "AASU Hospital")
+    .map(e => <EquipmentCard e={e} />)}
+</Group>
+🧠 8. Add QR Code System
+Generate a QR code for each equipment item:
+Scanning opens /equipment/:id
+Shows details, recent maintenance, and alert history
+import QRCode from 'qrcode';
+QRCode.toDataURL(`https://app/eq/${equipment.id}`);
+Add QR print button in Equipment Detail.
+📊 9. Dashboard Summary Widgets
+At top of Equipment page, show quick stats:
+Widget	Metric
+🧰 Total Equipment	Count of all
+🔧 Under Maintenance	% in service
+⚠️ Overdue	Count + %
+🏥 Facilities Covered	# of facilities
+📍 Active Locations	# of locations
+🧩 10. Backend API Enhancement
+GET /equipment?filters=... returns data with facility/location names:
+{
+  "id": "eq-101",
+  "name": "Ventilator V900",
+  "type": "Respiratory Support",
+  "facility_name": "AASU Hospital",
+  "location_name": "ICU Room 3",
+  "status": "Overdue",
+  "next_due_date": "2025-11-12"
+}
+Optional: paginate for large datasets.
+✅ 11. Acceptance Criteria
+ Equipment table shows facility, location, type, status
+ Filters for facility, type, criticality, and status
+ Color-coded badges for quick visual reference
+ Clicking opens detail drawer with recent tasks
+ Supports both table and grid view
+ QR code access for each device
+🚀 12. Future Enhancements
+AI-powered “Risk Prediction” → highlight devices likely to fail soon.
+Map View → visualize equipment per facility floor plan.
+Offline Mobile Mode → scan QR → view equipment info in low-connectivity areas (ICUs, labs).
+Batch Import/Export → Excel integration for hospital inventory sync.
