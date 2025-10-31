@@ -1,0 +1,181 @@
+Schema & Indexes
+-- Alerts
+CREATE TABLE IF NOT EXISTS maintenance_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID NOT NULL REFERENCES equipment(id),
+  facility_id UUID REFERENCES facilities(id),
+  location_id UUID REFERENCES locations(id),
+  severity TEXT CHECK (severity IN ('Info','Warning','Critical')) NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  due_date DATE NOT NULL,
+  status TEXT CHECK (status IN ('Open','Acknowledged','Resolved','Escalated')) DEFAULT 'Open',
+  escalation_level INT DEFAULT 0,
+  triggered_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  acknowledged_at TIMESTAMP WITH TIME ZONE,
+  resolved_at TIMESTAMP WITH TIME ZONE,
+  UNIQUE (equipment_id, status) WHERE status IN ('Open','Escalated')  -- 1 active thread per equipment
+);
+
+-- Helpful indexes
+CREATE INDEX IF NOT EXISTS idx_alerts_status_severity ON maintenance_alerts(status, severity);
+CREATE INDEX IF NOT EXISTS idx_equipment_due ON equipment(next_due_date) WHERE status <> 'Decommissioned';
+Tip: keep equipment.next_due_date accurate when a task completes (roll by +frequency_days).
+2) Idempotent generation job (runs nightly)
+Option A — Node.js (BullMQ + node-cron)
+// cron/generateAlerts.js
+import cron from 'node-cron';
+import dayjs from 'dayjs';
+import db from '../db.js';        // pg client
+import { withAdvisoryLock } from '../locks.js'; // pg advisory lock or Redis
+
+cron.schedule('0 2 * * *', async () => { // 02:00 local (Kuwait)
+  await withAdvisoryLock('alerts:daily', 60000, async () => {
+    const today = dayjs().startOf('day');
+
+    const { rows: eqs } = await db.query(`
+      SELECT id, name, facility_id, location_id, next_due_date
+      FROM equipment
+      WHERE status <> 'Decommissioned' AND next_due_date IS NOT NULL
+    `);
+
+    for (const e of eqs) {
+      const daysLeft = dayjs(e.next_due_date).diff(today, 'day');
+
+      let severity, title, message;
+      if (daysLeft <= 0) {
+        severity = 'Critical';
+        title = `Overdue maintenance: ${e.name}`;
+        message = `${e.name} is ${Math.abs(daysLeft)} day(s) overdue.`;
+      } else if (daysLeft <= 7) {
+        severity = 'Warning';
+        title = `Maintenance due soon: ${e.name}`;
+        message = `Due in ${daysLeft} day(s).`;
+      } else if (daysLeft <= 14) {
+        severity = 'Info';
+        title = `Upcoming maintenance: ${e.name}`;
+        message = `Planned in ${daysLeft} day(s).`;
+      } else continue;
+
+      // Upsert: if an active alert exists, update severity/message/due_date; otherwise insert
+      await db.query(`
+        INSERT INTO maintenance_alerts (equipment_id, facility_id, location_id, severity, title, message, due_date)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (equipment_id, status) WHERE status IN ('Open','Escalated')
+        DO UPDATE SET severity = EXCLUDED.severity,
+                      title    = EXCLUDED.title,
+                      message  = EXCLUDED.message,
+                      due_date = EXCLUDED.due_date
+      `, [e.id, e.facility_id, e.location_id, severity, title, message, e.next_due_date]);
+    }
+  });
+});
+Why this works
+Single active alert “thread” per equipment; content/severity refreshes as the date approaches.
+Advisory lock stops duplicate runs in multi-instance deployments.
+Severity automatically “upgrades” (Info → Warning → Critical).
+Option B — Python (APScheduler + psycopg)
+# jobs/generate_alerts.py
+from datetime import date
+from psycopg import connect
+
+def generate_alerts():
+    today = date.today()
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("""
+          SELECT id, name, facility_id, location_id, next_due_date
+          FROM equipment
+          WHERE status <> 'Decommissioned' AND next_due_date IS NOT NULL
+        """)
+        for (eid, name, fid, lid, due) in cur.fetchall():
+            days_left = (due - today).days
+            if days_left <= 0:
+                sev, title, msg = 'Critical', f'Overdue maintenance: {name}', f'{name} is {abs(days_left)} day(s) overdue.'
+            elif days_left <= 7:
+                sev, title, msg = 'Warning', f'Maintenance due soon: {name}', f'Due in {days_left} day(s).'
+            elif days_left <= 14:
+                sev, title, msg = 'Info', f'Upcoming maintenance: {name}', f'Planned in {days_left} day(s).'
+            else:
+                continue
+
+            cur.execute("""
+              INSERT INTO maintenance_alerts (equipment_id, facility_id, location_id, severity, title, message, due_date)
+              VALUES (%s,%s,%s,%s,%s,%s,%s)
+              ON CONFLICT (equipment_id, status) WHERE status IN ('Open','Escalated')
+              DO UPDATE SET severity=EXCLUDED.severity, title=EXCLUDED.title,
+                            message=EXCLUDED.message, due_date=EXCLUDED.due_date
+            """, (eid, fid, lid, sev, title, msg, due))
+        conn.commit()
+3) Escalation (optional but powerful)
+Run hourly:
+-- Escalate Critical alerts lingering > 3 days
+UPDATE maintenance_alerts a
+SET status='Escalated', escalation_level = escalation_level + 1
+WHERE status='Open'
+  AND severity='Critical'
+  AND (CURRENT_DATE - a.due_date) >= 3;
+(Trigger email/SMS/WhatsApp to supervisors when status becomes Escalated.)
+4) Auto-resolution when maintenance completes
+Hook into your “complete task” endpoint/service:
+-- Mark related active alerts resolved
+UPDATE maintenance_alerts
+SET status='Resolved', resolved_at = NOW()
+WHERE equipment_id = $1
+  AND status IN ('Open','Escalated');
+Then roll the schedule:
+-- Example: roll next due date by frequency (days)
+UPDATE equipment
+SET last_maintenance_date = CURRENT_DATE,
+    next_due_date = CURRENT_DATE + (frequency_days || ' days')::interval
+WHERE id = $1;
+5) Minimal APIs to operate the Alert Center
+GET    /api/alerts?severity=&status=&facility_id=&q=
+PATCH  /api/alerts/:id/ack            { }          -> status=Acknowledged, acknowledged_at
+PATCH  /api/alerts/:id/resolve        { }          -> status=Resolved, resolved_at (also closes on task complete)
+Suggested response shape
+{
+  "id": "alrt_123",
+  "severity": "Critical",
+  "status": "Open",
+  "title": "Overdue maintenance: Ventilator V900",
+  "message": "Ventilator V900 is 2 day(s) overdue.",
+  "due_date": "2025-11-05",
+  "equipment": { "id":"eq_9", "name":"Ventilator V900", "type":"Life Support" },
+  "facility":  { "id":"fac_1", "name":"AASU Hospital" },
+  "location":  { "id":"loc_icu3", "name":"ICU Room 3" },
+  "triggered_at": "2025-11-01T02:00:00Z"
+}
+6) Frontend: Alert Center essentials
+Bell badge shows count of status in ('Open','Escalated').
+Drawer + Table view sorted by severity desc, due_date asc.
+Color coding
+Info = blue, Warning = yellow, Critical/Escalated = red.
+Actions: Acknowledge, Resolve, Open equipment.
+(You already have UI patterns from earlier steps; this plugs straight in.)
+7) Reliability & timezone correctness
+Run jobs at 02:00 Asia/Kuwait to avoid off-by-one around midnight.
+Use date-only comparisons in SQL for due logic: CURRENT_DATE vs next_due_date.
+Ensure only one runner executes via pg advisory lock or Redis lock.
+Example (Postgres advisory lock):
+SELECT pg_try_advisory_lock(748_001); -- returns true if lock acquired
+-- ... do work ...
+SELECT pg_advisory_unlock(748_001);
+8) Tests (must pass)
+Unit
+Given next_due_date=today+10 → no alert.
++14..+8 → Info; +7..+1 → Warning; <=0 → Critical.
+Re-running job does not duplicate (ON CONFLICT hit).
+Integration
+Seed equipment (Active) with next_due_date=today+3.
+Run job → 1 Warning alert, Open.
+Advance time to due-1 → job updates alert (still Warning, message updates).
+Advance to due+2 → alert becomes Critical.
+Complete task → alert auto-Resolves; equipment next_due_date rolls forward.
+API
+PATCH /alerts/:id/ack sets Acknowledged.
+Filters return expected rows.
+9) Nice-to-have (quick wins)
+Daily summary email to supervisors: counts by severity/facility.
+PWA push on Critical creation.
+CSV export of open alerts for audits.
+KPI widgets: Critical open, Avg. acknowledgment time, MTTR by facility.
