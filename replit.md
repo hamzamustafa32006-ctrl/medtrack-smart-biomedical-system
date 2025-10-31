@@ -94,6 +94,19 @@ Preferred communication style: Simple, everyday language.
 - All queries filtered by `userId` to ensure data isolation
 - Drizzle ORM for type-safe database queries
 
+**Automated Alert Generation** (`server/alertService.ts`)
+- Daily scheduler using node-cron runs at midnight Kuwait time (Asia/Kuwait UTC+3)
+- Automatically scans all active equipment with `nextDueDate` set
+- Alert severity logic:
+  - **Critical**: Maintenance overdue (≤0 days past due date)
+  - **Warning**: Maintenance due in exactly 7 days
+  - Skips equipment with no due date or status 'Decommissioned'
+- Prevents duplicate alerts by checking for existing open alerts
+- Auto-resolves equipment alerts when maintenance is completed
+- Comprehensive logging with [SCHEDULER] prefix for monitoring
+- Error handling prevents scheduler crashes
+- Manual trigger available via `/api/alerts/generate` endpoint
+
 ### Data Storage
 
 **Database Technology**
