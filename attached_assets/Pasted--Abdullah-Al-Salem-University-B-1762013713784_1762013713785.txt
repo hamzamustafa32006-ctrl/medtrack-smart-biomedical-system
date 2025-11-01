@@ -1,0 +1,143 @@
+-- ============================================================
+-- 🚀 Abdullah Al-Salem University Biomedical Maintenance System
+-- Author: Hamza Ismail
+-- Purpose: Full setup for maintenance tracking system
+-- ============================================================
+
+-- 0️⃣ SAFETY FIRST
+BEGIN;
+
+-- ============================================================
+-- 🧱 STEP 1: CREATE MISSING TABLES
+-- ============================================================
+
+-- Vendors table (if missing)
+CREATE TABLE IF NOT EXISTS vendors (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+-- Users table (if missing)
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  role TEXT
+);
+
+-- Audit logs table
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type TEXT,
+  entity_id UUID,
+  action TEXT,
+  changed_by TEXT,
+  old_data JSONB,
+  new_data JSONB,
+  changed_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Maintenance tasks table
+CREATE TABLE IF NOT EXISTS maintenance_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  maintenance_id UUID REFERENCES maintenance_records(id) ON DELETE CASCADE,
+  task_name TEXT NOT NULL,
+  assigned_to TEXT,
+  due_date TIMESTAMP,
+  completed BOOLEAN DEFAULT FALSE,
+  remarks TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Notification logs table
+CREATE TABLE IF NOT EXISTS notification_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id TEXT,
+  title TEXT NOT NULL,
+  message TEXT,
+  sent_at TIMESTAMP DEFAULT NOW(),
+  type TEXT CHECK (type IN ('Alert','Reminder','Info')) DEFAULT 'Alert',
+  read BOOLEAN DEFAULT FALSE
+);
+
+-- ============================================================
+-- 👷 STEP 2: INSERT BASE DATA
+-- ============================================================
+
+-- Vendors
+INSERT INTO vendors (id, name)
+VALUES
+  ('vendor-001', 'GE Healthcare'),
+  ('vendor-002', 'Philips Medical')
+ON CONFLICT (id) DO NOTHING;
+
+-- Users
+INSERT INTO users (id, name, role)
+VALUES
+  ('tech-001', 'Ali', 'Technician'),
+  ('tech-002', 'Khalid', 'Technician'),
+  ('tech-003', 'Sarah', 'Technician'),
+  ('admin-001', 'Hamza', 'Admin')
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- ⚙️ STEP 3: SEED DATA
+-- ============================================================
+
+-- Alerts
+INSERT INTO alerts (id, equipment_id, facility_id, severity, title, message, due_date, status)
+VALUES
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='Ventilator V900'), 'fac-001', 'Critical', 'عطل في جهاز التنفس', 'الجهاز توقف فجأة عن العمل في وحدة العناية المركزة', NOW() + INTERVAL '1 day', 'Open'),
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='X-Ray XR210'), 'fac-001', 'Warning', 'صيانة دورية مطلوبة', 'اقترب موعد الصيانة الدورية للأشعة السينية', NOW() + INTERVAL '3 day', 'Open'),
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='CT Scanner CT128'), 'fac-001', 'Critical', 'الجهاز لا يعمل', 'تم الإبلاغ عن عطل كامل في جهاز الأشعة المقطعية', NOW(), 'Open');
+
+-- Audit Logs
+INSERT INTO audit_logs (entity_type, entity_id, action, changed_by, old_data, new_data)
+VALUES
+  ('equipment', (SELECT id FROM equipment WHERE name='Ventilator V900'), 'Update Status', 'user-001', '{"status":"Active"}', '{"status":"Under Maintenance"}'),
+  ('maintenance_records', (SELECT id FROM equipment WHERE name='X-Ray XR210'), 'Insert', 'user-002', NULL, '{"maintenance_type":"Preventive"}');
+
+-- Contracts
+INSERT INTO contracts (id, contract_number, vendor_id, start_date, end_date, contract_type, status, auto_renew, notes)
+VALUES
+  (gen_random_uuid(), 'CT-CON-2025-01', 'vendor-001', '2025-01-01', '2025-12-31', 'Service', 'Active', true, 'عقد صيانة سنوي شامل لجميع أجهزة الأشعة'),
+  (gen_random_uuid(), 'LAB-CON-2025-02', 'vendor-002', '2025-02-01', '2025-11-30', 'Calibration', 'Active', false, 'معايرة الأجهزة المخبرية');
+
+-- Maintenance Plans
+INSERT INTO maintenance_plans (id, name, description, frequency_days, department, created_at)
+VALUES
+  (gen_random_uuid(), 'خطة الصيانة الوقائية للأجهزة الحيوية', 'تتضمن متابعة دورية لأجهزة التنفس والمراقبة الحيوية', 180, 'ICU', NOW()),
+  (gen_random_uuid(), 'خطة المعايرة السنوية للأشعة', 'معايرة جميع أجهزة التصوير الطبي مرة سنويًا', 365, 'Radiology', NOW());
+
+-- Maintenance Records
+INSERT INTO maintenance_records (id, equipment_id, technician_id, maintenance_type, description, actions_taken, parts_used, cost, status)
+VALUES
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='Ventilator V900'), 'tech-001', 'Corrective', 'الجهاز كان يصدر إنذار ضغط خاطئ', 'تم استبدال حساس الضغط وتنظيف الفلاتر', 'Pressure Sensor', 25.000, 'Completed'),
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='X-Ray XR210'), 'tech-002', 'Preventive', 'صيانة دورية وتنظيف شامل', 'تم تحديث البرمجيات وتنظيف العدسات', 'Lens Cleaner', 15.000, 'Completed'),
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='CT Scanner CT128'), 'tech-003', 'Emergency', 'عطل في وحدة الطاقة', 'استبدال وحدة UPS', 'UPS Module', 85.000, 'In Progress');
+
+-- Maintenance Schedules
+INSERT INTO maintenance_schedules (id, equipment_id, maintenance_type, frequency_days, last_maintenance_date, next_due_date, assigned_to, priority, status, notes)
+VALUES
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='Ventilator V900'), 'Preventive', 180, '2025-06-01', '2025-12-01', 'tech-001', 'High', 'Scheduled', 'صيانة نصف سنوية'),
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='X-Ray XR210'), 'Calibration', 365, '2025-01-15', '2026-01-15', 'tech-002', 'Medium', 'Scheduled', 'معايرة سنوية'),
+  (gen_random_uuid(), (SELECT id FROM equipment WHERE name='CT Scanner CT128'), 'Preventive', 90, '2025-09-10', '2025-12-10', 'tech-003', 'Critical', 'Overdue', 'مطلوب صيانة عاجلة');
+
+-- Maintenance Tasks
+INSERT INTO maintenance_tasks (maintenance_id, task_name, assigned_to, due_date, completed, remarks)
+VALUES
+  ((SELECT id FROM maintenance_records WHERE maintenance_type='Corrective' LIMIT 1), 'فحص وحدة الطاقة', 'tech-001', NOW() + INTERVAL '2 days', false, 'بانتظار قطع الغيار'),
+  ((SELECT id FROM maintenance_records WHERE maintenance_type='Preventive' LIMIT 1), 'تنظيف المستشعرات', 'tech-002', NOW() + INTERVAL '3 days', true, 'تم الانتهاء'),
+  ((SELECT id FROM maintenance_records WHERE maintenance_type='Emergency' LIMIT 1), 'استبدال وحدة UPS', 'tech-003', NOW() + INTERVAL '1 day', false, 'بانتظار التأكيد');
+
+-- Notification Logs
+INSERT INTO notification_logs (recipient_id, title, message, type, read)
+VALUES
+  ('tech-001', 'تنبيه: صيانة مطلوبة', 'جهاز Ventilator V900 يحتاج إلى فحص عاجل', 'Alert', false),
+  ('tech-002', 'تذكير صيانة', 'جهاز X-Ray XR210 سيحتاج إلى صيانة بعد 3 أيام', 'Reminder', true),
+  ('admin-001', 'تنبيه إداري', 'تم إغلاق مهمة صيانة لجهاز CT Scanner CT128', 'Info', false);
+
+COMMIT;
+
+-- ============================================================
+-- ✅ DATABASE SEEDED SUCCESSFULLY
+-- ============================================================
