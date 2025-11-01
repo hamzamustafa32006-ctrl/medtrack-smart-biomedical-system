@@ -1,0 +1,131 @@
+-- ===== CLEAN INITIAL SETUP + SAMPLE DATA (Equipment Tracking) =====
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Drop old minimal core (safe order)
+DROP TABLE IF EXISTS equipment        CASCADE;
+DROP TABLE IF EXISTS locations        CASCADE;
+DROP TABLE IF EXISTS facilities       CASCADE;
+
+-- 1) Reference tables
+CREATE TABLE facilities (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code           TEXT UNIQUE NOT NULL,
+  name           TEXT NOT NULL,
+  address        TEXT,
+  contact_person TEXT,
+  phone          TEXT
+);
+
+CREATE TABLE locations (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id UUID NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
+  code        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  UNIQUE (facility_id, code)
+);
+
+-- 2) Equipment table (id kept TEXT for app compatibility)
+CREATE TABLE equipment (
+  id                       TEXT PRIMARY KEY,               -- app uses text ids
+  user_id                  TEXT,
+  name                     TEXT NOT NULL,
+  equipment_id             TEXT UNIQUE NOT NULL,           -- human code EQ-xxx
+  type                     TEXT,                           -- Imaging / Life Support / ...
+  department               TEXT,                           -- Radiology / ICU / ...
+  manufacturer             TEXT,
+  model                    TEXT,
+  serial_number            TEXT,
+  maintenance_freq_days    INT,                            -- PM interval (days)
+  last_maintenance_date    DATE,
+  next_due_date            DATE,
+  status                   TEXT DEFAULT 'Active',          -- Active / Out of Service / Decommissioned
+  facility_id              UUID REFERENCES facilities(id) ON DELETE SET NULL,
+  location_id              UUID REFERENCES locations(id)  ON DELETE SET NULL,
+  notes                    TEXT
+);
+
+-- Helpful indexes
+CREATE INDEX idx_equipment_next_due  ON equipment(next_due_date);
+CREATE INDEX idx_equipment_status    ON equipment(status);
+CREATE INDEX idx_equipment_facility  ON equipment(facility_id);
+CREATE UNIQUE INDEX uq_equipment_equipment_id ON equipment(equipment_id);
+
+-- 3) Seed one facility + common locations
+INSERT INTO facilities (code, name, address, contact_person, phone)
+VALUES ('ASU-HOSP','ASU Hospital','Kuwait City - AASU','Maintenance Dept.','+965-98765432');
+
+WITH fac AS (SELECT id FROM facilities WHERE code='ASU-HOSP')
+INSERT INTO locations (facility_id, code, name)
+SELECT fac.id, x.code, x.name FROM fac,
+(VALUES
+ ('MRI-A','MRI Suite A'),
+ ('CT-A1','CT Suite A1'),
+ ('RAD-B10','Radiology Dept., Room B10'),
+ ('RAD-B12','Radiology Dept., Room B12'),
+ ('ICU-3','ICU Room 3'),
+ ('ICU-5','ICU Room 5'),
+ ('OR-2','Operating Theatre 2'),
+ ('ER-TR1','ER Trauma Bay 1'),
+ ('WARD-A12','Ward A, Bed 12'),
+ ('CSSD','Central Sterile Supply Dept.'),
+ ('LAB-HEM','Lab – Hematology'),
+ ('ENDO-1','Endoscopy Suite, Room 1'),
+ ('NICU-4','NICU Bed 4')
+) AS x(code,name);
+
+-- 4) Sample devices (15) with computed next_due_date
+WITH fac AS (SELECT id FROM facilities WHERE code='ASU-HOSP'),
+loc AS (SELECT code, id FROM locations)
+INSERT INTO equipment (
+  id, user_id, name, equipment_id, type, department, manufacturer, model, serial_number,
+  maintenance_freq_days, last_maintenance_date, next_due_date, status, facility_id, location_id, notes
+) VALUES
+(gen_random_uuid()::text,'seed','MRI Scanner A','EQ-001','Imaging','Radiology','Siemens','MAGNETOM Altea','MR-AL-2025-001',
+ 180, CURRENT_DATE-120, (CURRENT_DATE-120) + (180||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='MRI-A'),'1.5T MRI'),
+(gen_random_uuid()::text,'seed','CT Scanner 128-slice','EQ-002','Imaging','Radiology','GE Healthcare','Revolution EVO','CT-REV-128-002',
+ 120, CURRENT_DATE-90,  (CURRENT_DATE-90) +  (120||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='CT-A1'),'128-slice CT'),
+(gen_random_uuid()::text,'seed','Digital X-Ray (DR) System','EQ-003','Imaging','Radiology','Philips','DigitalDiagnost','DR-DD-003',
+ 90,  CURRENT_DATE-80,  (CURRENT_DATE-80)  +  (90||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='RAD-B10'),'DR room'),
+(gen_random_uuid()::text,'seed','Ultrasound OB/GYN','EQ-004','Ultrasound','OB/GYN','Samsung Medison','WS80A','US-WS-004',
+ 180, CURRENT_DATE-30,  (CURRENT_DATE-30)  + (180||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='RAD-B12'),'OB/GYN ultrasound'),
+(gen_random_uuid()::text,'seed','ICU Ventilator V-900','EQ-005','Life Support','ICU','Dräger','Evita V500','VENT-V500-005',
+ 60,  CURRENT_DATE-40,  (CURRENT_DATE-40)  +  (60||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='ICU-3'),'Adult ventilator'),
+(gen_random_uuid()::text,'seed','Anesthesia Workstation','EQ-006','Anesthesia','OR','GE Healthcare','Aisys CS2','AN-CS2-006',
+ 90,  CURRENT_DATE-20,  (CURRENT_DATE-20)  +  (90||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='OR-2'),'OR anesthesia'),
+(gen_random_uuid()::text,'seed','Biphasic Defibrillator','EQ-007','Emergency','ER','Zoll','R Series','DEF-RS-007',
+ 180, CURRENT_DATE-10,  (CURRENT_DATE-10)  + (180||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='ER-TR1'),'ER crash cart'),
+(gen_random_uuid()::text,'seed','Patient Monitor MX700','EQ-008','Monitoring','ICU','Philips','IntelliVue MX700','PM-MX7-008',
+ 180, CURRENT_DATE-170, (CURRENT_DATE-170) + (180||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='ICU-5'),'Bedside monitor'),
+(gen_random_uuid()::text,'seed','Infusion Pump','EQ-009','Infusion','Ward A','B. Braun','Infusomat Space','INF-SP-009',
+ 180, CURRENT_DATE-175, (CURRENT_DATE-175) + (180||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='WARD-A12'),'General ward'),
+(gen_random_uuid()::text,'seed','Syringe Pump (NICU)','EQ-010','Infusion','NICU','Mindray','SK-500','SYR-500-010',
+ 180, CURRENT_DATE-15,  (CURRENT_DATE-15)  + (180||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='NICU-4'),'NICU pump'),
+(gen_random_uuid()::text,'seed','Hemodialysis Machine','EQ-011','Renal','Dialysis','Fresenius','4008S','HD-4008S-011',
+ 90,  CURRENT_DATE-50,  (CURRENT_DATE-50)  +  (90||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='WARD-A12'),'Dialysis'),
+(gen_random_uuid()::text,'seed','ECG 12-Lead','EQ-012','Cardiology','Cardiology','Nihon Kohden','ECG-2350','ECG-2350-012',
+ 365, CURRENT_DATE-200, (CURRENT_DATE-200) + (365||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='WARD-A12'),'Portable ECG'),
+(gen_random_uuid()::text,'seed','Autoclave Sterilizer','EQ-013','Sterilization','CSSD','Tuttnauer','5596','AUTO-5596-013',
+ 180, CURRENT_DATE-160, (CURRENT_DATE-160) + (180||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='CSSD'),'CSSD autoclave'),
+(gen_random_uuid()::text,'seed','Hematology Analyzer','EQ-014','Laboratory','Lab','Sysmex','XN-1000','HEM-XN-014',
+ 90,  CURRENT_DATE-5,   (CURRENT_DATE-5)   +  (90||' days')::interval,  'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='LAB-HEM'),'Lab analyzer'),
+(gen_random_uuid()::text,'seed','Endoscopy Tower','EQ-015','Endoscopy','Endoscopy','Olympus','CV-190','ENDO-190-015',
+ 180, CURRENT_DATE-150, (CURRENT_DATE-150) + (180||' days')::interval, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='ENDO-1'),'GI suite');
+
+COMMIT;
+-- ===== END =====
