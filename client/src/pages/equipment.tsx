@@ -98,7 +98,6 @@ export default function EquipmentPage() {
   const { toast } = useToast();
   const [equipmentDialogOpen, setEquipmentDialogOpen] = useState(false);
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
-  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,8 +134,8 @@ export default function EquipmentPage() {
     defaultValues: {
       name: "",
       equipmentId: "",
-      facilityId: "",
-      locationId: "",
+      facilityName: "",
+      location: "",
       type: "",
       maintenanceFrequencyDays: null,
       lastMaintenanceDate: null,
@@ -144,32 +143,6 @@ export default function EquipmentPage() {
     },
   });
 
-  const selectedFacilityId = equipmentForm.watch("facilityId");
-
-  const { data: locations } = useQuery<Location[]>({
-    queryKey: ["/api/facilities", selectedFacilityId, "locations"],
-    enabled: !!selectedFacilityId,
-  });
-
-  const locationForm = useForm<z.infer<typeof locationFormSchema>>({
-    resolver: zodResolver(locationFormSchema),
-    defaultValues: {
-      facilityId: "",
-      name: "",
-      floor: "",
-      room: "",
-      notes: "",
-    },
-  });
-
-  // Clear location selection when facility changes (but not on initial render)
-  const prevFacilityIdRef = useRef<string | null | undefined>();
-  useEffect(() => {
-    if (prevFacilityIdRef.current !== undefined && prevFacilityIdRef.current !== selectedFacilityId) {
-      equipmentForm.setValue("locationId", "");
-    }
-    prevFacilityIdRef.current = selectedFacilityId;
-  }, [selectedFacilityId, equipmentForm]);
 
   const contractForm = useForm<z.infer<typeof contractFormSchema>>({
     resolver: zodResolver(contractFormSchema),
@@ -260,53 +233,6 @@ export default function EquipmentPage() {
     },
   });
 
-  const createLocationMutation = useMutation<Location, Error, z.infer<typeof locationFormSchema>>({
-    mutationFn: async (data: z.infer<typeof locationFormSchema>) => {
-      return (await apiRequest("POST", `/api/facilities/${data.facilityId}/locations`, data)) as unknown as Location;
-    },
-    onSuccess: (newLocation, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/facilities", variables.facilityId, "locations"] });
-      setLocationDialogOpen(false);
-      locationForm.reset();
-      // Auto-select the newly created location
-      equipmentForm.setValue("locationId", newLocation.id);
-      toast({
-        title: "Success",
-        description: "Location added successfully",
-      });
-    },
-    onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
-      toast({
-        title: "Error",
-        description: "Failed to add location",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const openLocationDialog = () => {
-    if (!selectedFacilityId) {
-      toast({
-        title: "Select Facility First",
-        description: "Please select a facility before adding a location",
-        variant: "destructive",
-      });
-      return;
-    }
-    locationForm.setValue("facilityId", selectedFacilityId);
-    setLocationDialogOpen(true);
-  };
 
   const getEquipmentContracts = (equipmentId: string) => {
     return contracts?.filter((c) => c.equipmentId === equipmentId) || [];
@@ -610,70 +536,28 @@ export default function EquipmentPage() {
                   />
                   <FormField
                     control={equipmentForm.control}
-                    name="facilityId"
+                    name="facilityName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Facility *</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || undefined}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-facility">
-                              <SelectValue placeholder="Select facility" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {!facilities || facilities.length === 0 ? (
-                              <SelectItem value="no-facilities" disabled>No facilities available</SelectItem>
-                            ) : (
-                              facilities.map((facility) => (
-                                <SelectItem key={facility.id} value={facility.id} data-testid={`facility-option-${facility.id}`}>
-                                  {facility.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
+                        <FormLabel>Facility</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., ASU Hospital, Main Building" data-testid="input-facility-name" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>Enter facility name or location identifier</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                   <FormField
                     control={equipmentForm.control}
-                    name="locationId"
+                    name="location"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Location *</FormLabel>
-                        <div className="flex gap-2">
-                          <Select onValueChange={field.onChange} value={field.value || undefined} disabled={!selectedFacilityId}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-location" className="flex-1">
-                                <SelectValue placeholder={selectedFacilityId ? "Select location" : "Select facility first"} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {!locations || locations.length === 0 ? (
-                                <SelectItem value="no-locations" disabled>No locations available</SelectItem>
-                              ) : (
-                                locations.map((location) => (
-                                  <SelectItem key={location.id} value={location.id} data-testid={`location-option-${location.id}`}>
-                                    {location.name}
-                                    {location.floor && ` — Floor ${location.floor}`}
-                                    {location.room && ` (${location.room})`}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={openLocationDialog}
-                            disabled={!selectedFacilityId}
-                            data-testid="button-add-location"
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            Add
-                          </Button>
-                        </div>
+                        <FormLabel>Location</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Radiology Dept., Room B12" data-testid="input-location" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>Specific location, room, or department</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -744,81 +628,6 @@ export default function EquipmentPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Inline Add Location Dialog */}
-          <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Location</DialogTitle>
-                <DialogDescription>
-                  Add a location within the selected facility.
-                </DialogDescription>
-              </DialogHeader>
-              <Form {...locationForm}>
-                <form onSubmit={locationForm.handleSubmit((data) => createLocationMutation.mutate(data))} className="space-y-4">
-                  <FormField
-                    control={locationForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Location Name *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., Radiology Department" data-testid="input-location-name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={locationForm.control}
-                    name="floor"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Floor</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., 2" data-testid="input-floor" {...field} value={field.value || ""} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={locationForm.control}
-                    name="room"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Room</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., B-12" data-testid="input-room" {...field} value={field.value || ""} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={locationForm.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Additional notes..." data-testid="input-location-notes" {...field} value={field.value || ""} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="flex gap-2 justify-end pt-4">
-                    <Button type="button" variant="outline" onClick={() => setLocationDialogOpen(false)} data-testid="button-cancel-location">
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={createLocationMutation.isPending} data-testid="button-save-location">
-                      {createLocationMutation.isPending ? "Saving..." : "Add Location"}
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
         </div>
 
         {/* Search and Filters */}
@@ -1430,41 +1239,36 @@ export default function EquipmentPage() {
                   <Card className="p-4">
                     <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                       <Building2 className="w-4 h-4" />
-                      Facility Information
+                      Facility & Location Information
                     </h3>
                     <div className="space-y-3">
-                      {selectedEquipment.facilityId && (
+                      {selectedEquipment.facilityName && (
                         <div>
                           <div className="text-xs text-muted-foreground mb-1">Facility</div>
                           <div className="text-sm font-medium" data-testid="text-detail-facility">
-                            {facilities?.find(f => f.id === selectedEquipment.facilityId)?.name || "—"}
+                            {selectedEquipment.facilityName}
                           </div>
                         </div>
                       )}
-                      {selectedEquipment.locationId && (() => {
-                        const loc = locations?.find(l => l.id === selectedEquipment.locationId);
-                        if (!loc) return null;
-                        return (
-                          <>
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-1">Department/Area</div>
-                              <div className="text-sm font-medium" data-testid="text-detail-location">{loc.name}</div>
-                            </div>
-                            {loc.floor && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1">Floor</div>
-                                <div className="text-sm font-medium">{loc.floor}</div>
-                              </div>
-                            )}
-                            {loc.room && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1">Room</div>
-                                <div className="text-sm font-medium">{loc.room}</div>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
+                      {selectedEquipment.location && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Location</div>
+                          <div className="text-sm font-medium" data-testid="text-detail-location">
+                            {selectedEquipment.location}
+                          </div>
+                        </div>
+                      )}
+                      {selectedEquipment.department && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Department</div>
+                          <div className="text-sm font-medium" data-testid="text-detail-department">
+                            {selectedEquipment.department}
+                          </div>
+                        </div>
+                      )}
+                      {!selectedEquipment.facilityName && !selectedEquipment.location && !selectedEquipment.department && (
+                        <p className="text-sm text-muted-foreground">No facility or location information provided</p>
+                      )}
                     </div>
                   </Card>
                 </TabsContent>

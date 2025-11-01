@@ -180,7 +180,8 @@ export const equipment = pgTable("equipment", {
   vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
   name: varchar("name", { length: 255 }).notNull(),
   equipmentId: varchar("equipment_id", { length: 100 }), // Custom ID like EQ-001, auto-generated
-  location: varchar("location", { length: 255 }), // Legacy field for backward compatibility
+  facilityName: varchar("facility_name", { length: 255 }), // Free-text facility name (alternative to facilityId)
+  location: varchar("location", { length: 255 }), // Free-text location (alternative to locationId)
   type: varchar("type", { length: 100 }),
   manufacturer: varchar("manufacturer", { length: 255 }),
   model: varchar("model", { length: 255 }),

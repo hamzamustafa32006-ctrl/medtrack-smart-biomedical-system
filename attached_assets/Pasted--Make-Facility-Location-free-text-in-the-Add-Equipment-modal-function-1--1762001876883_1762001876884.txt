@@ -1,0 +1,82 @@
+/* ==== Make Facility/Location free-text in the Add Equipment modal ==== */
+(function () {
+  // 1) لقِط نموذج إضافة الجهاز (عدّل السليكتور إذا كان مختلف)
+  const form = document.querySelector('form') || document.querySelector('#add-equipment-form');
+  if (!form) { alert('لم أجد نموذج Add Equipment على الصفحة'); return; }
+
+  // 2) لقِط حقول الـ select الحالية (إن وجدت) وخبّيها
+  const facSelect = form.querySelector('select[name="facility_id"]');
+  const locSelect = form.querySelector('select[name="location_id"]');
+  if (facSelect) facSelect.style.display = 'none';
+  if (locSelect) locSelect.style.display = 'none';
+
+  // 3) أضِف حقول إدخال نصّية بديلة
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin:12px 0;padding:10px;border:1px dashed #ddd;border-radius:8px';
+  wrap.innerHTML = `
+    <div style="margin-bottom:6px;font-weight:600">إدخال يدوي (منشأة/موقع):</div>
+    <input id="manFacility" placeholder="Facility name (مثال: ASU Hospital)" style="width:100%;padding:8px;margin-bottom:6px">
+    <input id="manLocation" placeholder="Location (مثال: Radiology Dept., Room B12)" style="width:100%;padding:8px">
+    <div style="font-size:12px;color:#666">يمكن ترك الموقع فارغًا وسيُحفظ الجهاز بدون موقع.</div>
+  `;
+  // ضع الإدخال اليدوي قبل زر الحفظ
+  const submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
+  (submitBtn?.parentElement || form).insertBefore(wrap, submitBtn);
+
+  // 4) أنشئ/حدّث حقول مخفية لتمرير IDs للباك-إند
+  const ensureHidden = (name) => {
+    let el = form.querySelector(`input[name="${name}"]`);
+    if (!el) {
+      el = document.createElement('input');
+      el.type = 'hidden';
+      el.name = name;
+      form.appendChild(el);
+    }
+    return el;
+  };
+  const hidFac = ensureHidden('facility_id');
+  const hidLoc = ensureHidden('location_id');
+
+  // 5) عند الإرسال: استخدم الإدخال اليدوي. جرّب استدعاء API ذكي، ولو غير موجود كمل طبيعي
+  form.addEventListener('submit', async (e) => {
+    const facilityName = document.getElementById('manFacility')?.value?.trim();
+    const locationName = document.getElementById('manLocation')?.value?.trim();
+
+    if (!facilityName) {
+      // لا يوجد إدخال يدوي؛ اسمح بالإرسال كما هو (يمكن تكون القوائم تُستخدم)
+      return;
+    }
+
+    e.preventDefault(); // أوقف مؤقتًا
+
+    try {
+      // حاول استخدام API لو متوفر في الباك-إند
+      const resp = await fetch('/smart/facility-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facilityName, locationName })
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok) {
+          hidFac.value = data.facility_id || '';
+          hidLoc.value = data.location_id || '';
+        }
+      } else {
+        // لو غير موجود/يرجع 404، نمشي بالخطة البديلة
+        console.warn('smart API not available, will submit without resolving ids');
+      }
+    } catch (err) {
+      console.warn('smart API error:', err);
+    }
+
+    // حتى لو ما قدرنا نجيب IDs، ما نوقفك — نرسل النموذج
+    form.submit();
+  });
+
+  // 6) خيار: اجعل الحقول النصّية “إجبارية” إذا تحب
+  // document.getElementById('manFacility').required = true;
+
+  console.log('✅ Facility/Location now free-text. اكتب على راحتك واحفظ.');
+})();
