@@ -1,0 +1,213 @@
+Excellent, Hamza 👏 — you’re zeroing in on a key UX and data-management upgrade that makes your **Maintenance Alert App** feel like a professional CMMS (Computerized Maintenance Management System).
+
+Let’s add the **ability to filter and search equipment by maintenance status**, with clean backend logic and a simple, efficient frontend integration.
+
+---
+
+## 🎯 Goal
+
+Users should be able to:
+
+* Filter equipment by maintenance status (`Active`, `Pending Inspection`, `Under Maintenance`, `Overdue`, etc.)
+* Search by name, model, serial number, or facility
+* Combine both filters (e.g., *“Find all ICU ventilators under maintenance”*)
+
+---
+
+## ⚙️ 1. Backend Implementation (Node.js + PostgreSQL)
+
+### ✅ Endpoint: `GET /equipment`
+
+Example:
+
+```
+/equipment?status=Under%20Maintenance&search=ventilator
+```
+
+### 📜 Code (Express)
+
+```js
+app.get('/equipment', async (req, res) => {
+  const { status, search } = req.query;
+
+  let query = `
+    SELECT e.id, e.name, e.model, e.serial_number, e.status, e.next_due_date,
+           f.name AS facility_name
+    FROM equipment e
+    LEFT JOIN facilities f ON e.facility_id = f.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  // Filter by maintenance status
+  if (status) {
+    params.push(status);
+    query += ` AND e.status = $${params.length}`;
+  }
+
+  // Text-based search
+  if (search) {
+    params.push(`%${search.toLowerCase()}%`);
+    query += ` AND (
+      LOWER(e.name) LIKE $${params.length}
+      OR LOWER(e.model) LIKE $${params.length}
+      OR LOWER(e.serial_number) LIKE $${params.length}
+      OR LOWER(f.name) LIKE $${params.length}
+    )`;
+  }
+
+  query += ' ORDER BY e.name ASC';
+
+  try {
+    const { rows } = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error filtering equipment:', err);
+    res.status(500).json({ error: 'Failed to filter equipment.' });
+  }
+});
+```
+
+✅ Safe — uses parameterized SQL
+✅ Flexible — either `status`, `search`, or both
+✅ Clean sorting by name
+
+---
+
+### 🧱 Recommended Indexes (PostgreSQL)
+
+Improve query performance:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_equipment_status ON equipment(status);
+CREATE INDEX IF NOT EXISTS idx_equipment_search 
+ON equipment USING gin(to_tsvector('english', name || ' ' || model || ' ' || serial_number));
+```
+
+---
+
+### 🧩 Example API Responses
+
+**Request:**
+`/equipment?status=Under%20Maintenance&search=ventilator`
+
+**Response:**
+
+```json
+[
+  {
+    "id": "eq-203",
+    "name": "Ventilator V900",
+    "model": "V900",
+    "serial_number": "VN-9981",
+    "status": "Under Maintenance",
+    "next_due_date": "2025-11-06",
+    "facility_name": "AASU Hospital"
+  }
+]
+```
+
+---
+
+## 🖥️ 2. Frontend Integration
+
+### 🔹 Search + Filter Controls
+
+```tsx
+<div className="flex gap-3 items-center">
+  <select
+    value={status}
+    onChange={(e) => setStatus(e.target.value)}
+    className="border rounded-md p-2"
+  >
+    <option value="">All Statuses</option>
+    <option value="Active">Active</option>
+    <option value="Pending Inspection">Pending Inspection</option>
+    <option value="Under Maintenance">Under Maintenance</option>
+    <option value="Decommissioned">Decommissioned</option>
+  </select>
+
+  <input
+    type="text"
+    placeholder="Search equipment..."
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    className="border p-2 rounded-md w-64"
+  />
+
+  <button
+    className="bg-blue-600 text-white px-4 py-2 rounded-md"
+    onClick={() => fetchEquipment(status, search)}
+  >
+    Apply
+  </button>
+</div>
+```
+
+### 🔹 Fetch Function
+
+```js
+const fetchEquipment = async (status, search) => {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (search) params.append('search', search);
+
+  const res = await fetch(`/equipment?${params.toString()}`);
+  const data = await res.json();
+  setEquipment(data);
+};
+```
+
+---
+
+### 🔹 Table Example
+
+| Name            | Facility      | Status               | Next Due Date |
+| --------------- | ------------- | -------------------- | ------------- |
+| Ventilator V900 | AASU Hospital | 🔴 Under Maintenance | Nov 6, 2025   |
+| X-Ray XR210     | Radiology     | 🟢 Active            | Dec 10, 2025  |
+
+---
+
+## 📊 3. Dashboard Integration
+
+Your dashboard’s summary widgets and charts can use this same endpoint for live data:
+
+* “🟢 Active Equipment”
+* “🔴 Under Maintenance”
+* “⚠️ Pending Inspection”
+
+Example Query:
+
+```js
+fetch('/equipment?status=Under%20Maintenance')
+```
+
+Then display count in your dashboard KPI cards or real-time analytics graphs.
+
+---
+
+## 🧠 4. Optional Enhancements
+
+| Feature              | Description                                                         |
+| -------------------- | ------------------------------------------------------------------- |
+| **Pagination**       | Add `?limit=20&offset=0`                                            |
+| **Sort options**     | Add `?sort=due_date`                                                |
+| **Facility filter**  | Add `?facility=UUID`                                                |
+| **Overdue logic**    | Auto-flag status based on `next_due_date < today`                   |
+| **Full-text search** | Replace `LIKE` with PostgreSQL `to_tsvector()` for faster searching |
+
+---
+
+## ✅ 5. Acceptance Criteria
+
+* [x] Endpoint `/equipment?status=&search=` supports filtering and text search
+* [x] Results update dynamically without page reload
+* [x] Backend safely handles all query cases (with/without filters)
+* [x] Dashboard and analytics can reuse this endpoint
+* [x] Frontend UI provides clear, fast filter controls
+
+---
+
+Would you like me to **extend this endpoint** so it can also **filter by upcoming or overdue maintenance dates**
+(e.g., `/equipment?status=Active&dueBefore=2025-11-10` → *equipment needing service within a week*)?
