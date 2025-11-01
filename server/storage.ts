@@ -42,7 +42,7 @@ import {
   type InsertAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, gte, lte, or, ne, sql } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, or, ne, sql, inArray } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
