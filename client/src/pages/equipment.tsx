@@ -21,8 +21,8 @@ import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
 import { QRCodeSVG } from "qrcode.react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import type { Equipment, Contract, Facility, Location, EquipmentStatus, EquipmentCriticality, MaintenanceRecord } from "@shared/schema";
-import { insertEquipmentSchema, insertContractSchema, insertLocationSchema, type InsertEquipment, type InsertContract, type InsertLocation } from "@shared/schema";
+import type { Equipment, Contract, Facility, EquipmentStatus, EquipmentCriticality, MaintenanceRecord } from "@shared/schema";
+import { insertEquipmentSchema, insertContractSchema, type InsertEquipment, type InsertContract } from "@shared/schema";
 import { z } from "zod";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
@@ -36,9 +36,6 @@ const contractFormSchema = insertContractSchema.extend({
   endDate: z.string(),
   alertThresholdDays: z.coerce.number().int().positive().default(30),
 });
-
-// insertLocationSchema already omits id, createdAt, updatedAt
-const locationFormSchema = insertLocationSchema;
 
 // Helper component: Status Badge with color coding
 function StatusBadge({ status }: { status: string }) {

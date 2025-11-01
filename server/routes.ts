@@ -139,15 +139,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/equipment", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      console.log("[DEBUG] POST /api/equipment - Request body:", JSON.stringify(req.body, null, 2));
       const data = insertEquipmentSchema.parse(req.body);
-      console.log("[DEBUG] POST /api/equipment - Parsed data:", JSON.stringify(data, null, 2));
       const equipment = await storage.createEquipment(data, userId);
-      console.log("[DEBUG] POST /api/equipment - Created equipment:", JSON.stringify(equipment, null, 2));
       res.status(201).json(equipment);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        console.error("[DEBUG] POST /api/equipment - Zod validation error:", error.errors);
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
       }
       console.error("Error creating equipment:", error);
