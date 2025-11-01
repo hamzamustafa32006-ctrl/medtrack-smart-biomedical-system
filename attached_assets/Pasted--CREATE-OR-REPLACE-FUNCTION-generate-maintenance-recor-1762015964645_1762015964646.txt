@@ -1,0 +1,87 @@
+-- دالة أتمتة بمدى زمني قابل للتعديل (بالأيام)
+CREATE OR REPLACE FUNCTION generate_maintenance_records(days_ahead INT DEFAULT 7)
+RETURNS VOID AS $$
+BEGIN
+  -- 1) من الجداول: أي next_due_date خلال days_ahead أو حالة Overdue
+  INSERT INTO maintenance_records
+    (id, equipment_id, technician_id, maintenance_type, description, actions_taken, parts_used, cost, status, created_at)
+  SELECT
+    gen_random_uuid(),
+    ms.equipment_id,
+    CASE f.id
+      WHEN 'fac-001' THEN 'tech-001'
+      WHEN 'fac-002' THEN 'tech-002'
+      WHEN 'fac-003' THEN 'tech-003'
+      ELSE 'tech-001'
+    END AS technician_id,
+    ms.maintenance_type,
+    CONCAT('Auto-generated from schedule; next_due_date: ', COALESCE(ms.next_due_date::text,'(null)')),
+    NULL, NULL, 0.00,
+    'In Progress', NOW()
+  FROM maintenance_schedules ms
+  JOIN equipment e ON e.id = ms.equipment_id
+  LEFT JOIN facilities f ON f.id = e.facility_id
+  WHERE
+    (ms.next_due_date IS NOT NULL AND ms.next_due_date <= NOW() + make_interval(days => days_ahead))
+     OR ms.status = 'Overdue'
+  ON CONFLICT ON CONSTRAINT uniq_open_record_per_equipment_type DO NOTHING;
+
+  -- 2) من التنبيهات الحرجة المفتوحة
+  INSERT INTO maintenance_records
+    (id, equipment_id, technician_id, maintenance_type, description, actions_taken, parts_used, cost, status, created_at)
+  SELECT
+    gen_random_uuid(),
+    a.equipment_id,
+    CASE a.facility_id
+      WHEN 'fac-001' THEN 'tech-001'
+      WHEN 'fac-002' THEN 'tech-002'
+      WHEN 'fac-003' THEN 'tech-003'
+      ELSE 'tech-001'
+    END AS technician_id,
+    'Corrective',
+    CONCAT('Auto-generated from CRITICAL alert: ', COALESCE(a.title,''), ' - ', COALESCE(a.message,'')),
+    NULL, NULL, 0.00,
+    'In Progress', NOW()
+  FROM alerts a
+  WHERE a.severity = 'Critical' AND a.status = 'Open' AND a.equipment_id IS NOT NULL
+  ON CONFLICT ON CONSTRAINT uniq_open_record_per_equipment_type DO NOTHING;
+
+  -- 3) مهام افتراضية لأي سجل جديد (أُنشئ للتو)
+  INSERT INTO maintenance_tasks (id, maintenance_id, task_name, assigned_to, due_date, completed, remarks, created_at)
+  SELECT
+    gen_random_uuid(),
+    mr.id,
+    CASE
+      WHEN mr.maintenance_type = 'Preventive' THEN 'Perform scheduled preventive maintenance'
+      WHEN mr.maintenance_type = 'Calibration' THEN 'Perform calibration and record readings'
+      WHEN mr.maintenance_type = 'Corrective' THEN 'Diagnose and fix reported malfunction'
+      ELSE 'General maintenance task'
+    END,
+    mr.technician_id,
+    NOW() + INTERVAL '2 days',
+    FALSE,
+    'Auto-generated maintenance task',
+    NOW()
+  FROM maintenance_records mr
+  WHERE mr.created_at >= NOW() - INTERVAL '10 minutes'
+    AND NOT EXISTS (SELECT 1 FROM maintenance_tasks t WHERE t.maintenance_id = mr.id);
+
+  -- 4) تحديث حالة الأجهزة (إنجليزي)
+  UPDATE equipment
+  SET status = 'Not Working'
+  WHERE id IN (
+    SELECT equipment_id FROM alerts WHERE severity='Critical' AND status='Open' AND equipment_id IS NOT NULL
+  )
+  AND status IS DISTINCT FROM 'Not Working';
+
+  UPDATE equipment
+  SET status = 'Needs Maintenance'
+  WHERE id IN (
+    SELECT ms.equipment_id
+    FROM maintenance_schedules ms
+    WHERE (ms.next_due_date IS NOT NULL AND ms.next_due_date <= NOW() + make_interval(days => days_ahead))
+       OR ms.status = 'Overdue'
+  )
+  AND status = 'Good';
+END;
+$$ LANGUAGE plpgsql;

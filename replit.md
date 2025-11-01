@@ -6,6 +6,24 @@ The Maintenance Alert App is a professional maintenance tracking system for engi
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Recent Updates (November 2025)
+
+### Role-Based Access Control (RBAC) System
+- **4 User Roles**: admin, supervisor, technician, viewer with 13 predefined permissions
+- **Frontend Hooks**: `useRole`, `useIsAdmin`, `useCurrentRole`, `useCanApproveMaintenance` for conditional UI rendering
+- **UI Components**: `RequireRole`, `AdminOnly`, `SupervisorOnly`, `RoleSwitch` for role-based content display
+- **Role Badge**: Header displays current user role with color coding (admin = primary blue)
+- **Backend Authorization**: Middleware (`requirePermission`, `requireRole`, `requireAdmin`) ready for API route protection
+- **Auto-Seeding**: Permissions automatically seeded on server startup (idempotent)
+- **Development Mode**: New users automatically assigned "admin" role for easier testing
+
+### Automated Maintenance Record Generation
+- **SQL Function**: `generate_maintenance_records(days_ahead INT)` for automated record creation
+- **Smart Generation**: Creates records from maintenance schedules (upcoming/overdue) and critical alerts
+- **Duplicate Prevention**: Checks for existing open records before creating new ones
+- **Equipment Status Updates**: Automatically updates equipment status based on alerts and schedules
+- **User Scoping**: All generated records properly scoped to equipment owner's userId
+
 ## System Architecture
 
 ### Frontend Architecture
@@ -65,7 +83,8 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Storage
 - **Database Technology**: PostgreSQL via Neon serverless database, WebSocket connection pooling.
-- **Database Schema**: Managed by Drizzle ORM. Key tables include `sessions`, `users`, `facilities`, `locations`, `equipment` (with flexible free-text or foreign key facility/location, enhanced biomedical fields, and analytics tracking columns: `priority`, `riskScore`, `statusColor`, `lastCheck`, `daysOverdue`, `isOverdue`), `contracts`, `maintenanceRecords` (enhanced with professional fields: `technicianId`, `startDate`, `endDate`, `actionsTaken`, `partsUsed`, `cost`, `status` [In Progress/Completed/Pending Verification], `verificationStatus` [Verified/Rejected/Pending], `verifiedBy`, `verifiedAt`), `maintenancePlans`, `maintenanceTasks`, `maintenance_schedules` (automated scheduling with status tracking, technician assignment, frequency-based rescheduling), `alerts` (multi-level, escalation, multi-channel delivery), `notificationLogs`, `auditLogs`.
+- **Database Schema**: Managed by Drizzle ORM. Key tables include `sessions`, `users` (with role field: admin/supervisor/technician/viewer), `roles_permissions` (role-permission mappings with 13 default permissions), `facilities`, `locations`, `equipment` (with flexible free-text or foreign key facility/location, enhanced biomedical fields, and analytics tracking columns: `priority`, `riskScore`, `statusColor`, `lastCheck`, `daysOverdue`, `isOverdue`), `contracts`, `maintenanceRecords` (enhanced with professional fields: `technicianId`, `startDate`, `endDate`, `actionsTaken`, `partsUsed`, `cost`, `status` [In Progress/Completed/Pending Verification], `verificationStatus` [Verified/Rejected/Pending], `verifiedBy`, `verifiedAt`), `maintenancePlans`, `maintenanceTasks`, `maintenance_schedules` (automated scheduling with status tracking, technician assignment, frequency-based rescheduling), `alerts` (multi-level, escalation, multi-channel delivery), `notificationLogs`, `auditLogs`.
+- **Stored Functions**: `generate_maintenance_records(days_ahead INT)` - Automated maintenance record creation from schedules and critical alerts with duplicate prevention.
 - **Schema Validation**: Drizzle-Zod for Zod schema generation, runtime validation on API endpoints.
 - **Data Integrity**: Unique constraints on (userId, serial) for equipment and (userId, contractNumber) for contracts prevent duplicates while supporting multi-tenancy.
 - **Analytics Tracking**: Equipment table includes real-time analytics columns for dashboard visualization: color-coded status (`statusColor`: red/orange/green based on maintenance overdue days), priority flags, risk scores (0-100), and overdue tracking metrics.
