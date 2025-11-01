@@ -52,6 +52,32 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
 // ============================================
+// Roles & Permissions
+// ============================================
+
+export const rolesPermissions = pgTable("roles_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  role: varchar("role", { length: 50 }).notNull(),
+  permission: varchar("permission", { length: 100 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("unique_role_permission").on(table.role, table.permission)
+]);
+
+export const insertRolePermissionSchema = createInsertSchema(rolesPermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type RolePermission = typeof rolesPermissions.$inferSelect;
+
+// Role enum for validation
+export const roleEnum = z.enum(["admin", "supervisor", "technician", "viewer"]);
+export type Role = z.infer<typeof roleEnum>;
+
+// ============================================
 // Facilities & Locations
 // ============================================
 

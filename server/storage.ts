@@ -13,6 +13,7 @@ import {
   alerts,
   notificationLogs,
   auditLogs,
+  rolesPermissions,
   type User,
   type UpsertUser,
   type Equipment,
@@ -47,7 +48,9 @@ import { eq, and, desc, gte, lte } from "drizzle-orm";
 export interface IStorage {
   // User operations (MANDATORY for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
+  getUserById(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  hasPermission(role: string, permission: string): Promise<boolean>;
   
   // Facility operations
   getFacilities(userId: string): Promise<Facility[]>;
@@ -163,6 +166,23 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    return this.getUser(id);
+  }
+
+  async hasPermission(role: string, permission: string): Promise<boolean> {
+    const [result] = await db
+      .select()
+      .from(rolesPermissions)
+      .where(and(
+        eq(rolesPermissions.role, role),
+        eq(rolesPermissions.permission, permission)
+      ))
+      .limit(1);
+    
+    return !!result;
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {

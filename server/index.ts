@@ -5,6 +5,7 @@ import cron from "node-cron";
 import { generateMaintenanceAlerts } from "./alertService";
 import { updateScheduleStatuses } from "./scheduleService";
 import { updateContractStatuses } from "./contractService";
+import { seedDefaultPermissions } from "./seedPermissions";
 
 const app = express();
 
@@ -51,6 +52,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Seed default permissions on startup
+  await seedDefaultPermissions();
+  
   const server = await registerRoutes(app);
 
   // Setup daily maintenance alert generation, schedule status updates, and contract expiry detection

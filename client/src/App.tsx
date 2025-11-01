@@ -10,6 +10,8 @@ import { BottomNav } from "@/components/bottom-nav";
 import { useAuth } from "@/hooks/useAuth";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAlertNotifications } from "@/hooks/use-alert-notifications.tsx";
+import { Badge } from "@/components/ui/badge";
+import { useCurrentRole } from "@/hooks/useRole";
 import Landing from "@/pages/landing";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -53,6 +55,7 @@ function Router() {
 
 function AuthenticatedApp() {
   const { isAuthenticated, isLoading } = useAuth();
+  const currentRole = useCurrentRole();
   
   // Enable alert notifications polling only when authenticated
   useAlertNotifications(isAuthenticated);
@@ -79,7 +82,18 @@ function AuthenticatedApp() {
         <div className="flex flex-col flex-1">
           <header className="flex items-center justify-between p-2 border-b gap-2">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <NotificationBell />
+            <div className="flex items-center gap-2">
+              {currentRole && (
+                <Badge 
+                  variant={currentRole === 'admin' ? 'default' : 'secondary'}
+                  data-testid="badge-user-role"
+                  className="capitalize"
+                >
+                  {currentRole}
+                </Badge>
+              )}
+              <NotificationBell />
+            </div>
           </header>
           <main className="flex-1 overflow-auto pb-16 md:pb-0">
             <Toaster />

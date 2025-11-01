@@ -1,0 +1,69 @@
+الخطوة 1: تعديل جدول المستخدمين (Users)
+🧩 SQL
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS role TEXT CHECK (role IN ('Admin', 'Technician', 'Supervisor', 'Viewer')) DEFAULT 'Technician';
+
+CREATE TABLE IF NOT EXISTS roles_permissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role TEXT NOT NULL,
+  permission TEXT NOT NULL
+);
+🔐 الخطوة 2: إضافة الصلاحيات الافتراضية (Permissions)
+🗝️ SQL
+INSERT INTO roles_permissions (role, permission) VALUES
+  ('Admin', 'view_all'),
+  ('Admin', 'edit_all'),
+  ('Admin', 'approve_maintenance'),
+  ('Technician', 'view_assigned'),
+  ('Technician', 'update_tasks'),
+  ('Supervisor', 'view_all'),
+  ('Supervisor', 'approve_maintenance'),
+  ('Viewer', 'view_dashboard');
+💡
+بهذا نكون أنشأنا نظام صلاحيات مرن — ممكن توسّعه لاحقًا بإضافة صلاحيات جديدة بسهولة (مثل "delete_alerts" أو "export_reports").
+🧠 الخطوة 3: نموذج العلاقات
+users
+ └── role → roles_permissions (many-to-one)
+maintenance_records
+ └── technician_id → users.id
+بهذا الشكل نقدر نعرف صلاحية كل مستخدم ونقيّد العمليات حسبها.
+🧩 الخطوة 4: تعديل الـ API للتحقق من الصلاحيات
+🔹 مثال (Node.js / Express):
+async function authorize(userId, permission) {
+  const result = await db.query(`
+    SELECT 1 FROM roles_permissions
+    WHERE role = (SELECT role FROM users WHERE id = $1)
+    AND permission = $2
+  `, [userId, permission]);
+  return result.rowCount > 0;
+}
+
+// مثال استخدام
+app.post('/maintenance-records', async (req, res) => {
+  const { userId } = req.body;
+  const allowed = await authorize(userId, 'edit_all');
+  if (!allowed) return res.status(403).json({ error: 'Access denied' });
+  
+  // باقي الكود لإنشاء السجل...
+});
+💡 هذا يضمن أن فقط المستخدمين المصرح لهم يمكنهم التعديل أو الحذف.
+🖥️ الخطوة 5: تعديل الواجهة (Frontend)
+✅ عند تسجيل الدخول:
+احفظ دور المستخدم في الحالة (context)
+استخدمه لإظهار المكونات المناسبة فقط
+{user.role === 'Admin' && <Button>Add New Maintenance Record</Button>}
+{user.role === 'Technician' && <TaskList technicianId={user.id} />}
+🧾 الخطوة 6: بيانات أولية للمستخدمين مع الأدوار
+INSERT INTO users (id, name, role) VALUES
+  ('admin-001', 'Hamza', 'Admin'),
+  ('tech-001', 'Ali', 'Technician'),
+  ('tech-002', 'Khalid', 'Technician'),
+  ('super-001', 'Noura', 'Supervisor'),
+  ('viewer-001', 'Mohammed', 'Viewer')
+ON CONFLICT (id) DO NOTHING;
+✅ النتيجة النهائية
+المستخدم	الدور	الصلاحيات
+Hamza	Admin	عرض وتحرير واعتماد الكل
+Ali	Technician	عرض وتحديث مهامه فقط
+Noura	Supervisor	عرض الكل + الموافقة
+Mohammed	Viewer	عرض لوحة التحكم فقط
