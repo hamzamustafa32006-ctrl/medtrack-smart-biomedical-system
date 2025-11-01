@@ -1,0 +1,277 @@
+*** Begin Patch
+*** Add File: src/pages/api/equipment-alerts/summary.ts
++import type { NextApiRequest, NextApiResponse } from 'next';
++import { and, or, lt, gte, lte, inArray, isNull, not, sql } from 'drizzle-orm';
++import { db } from '@/db';
++import { equipment, alerts } from '@/db/schema';
++
++const UPCOMING_DAYS = Number(process.env.UPCOMING_WINDOW_DAYS ?? 30);
++const HEALTH_CRIT   = Number(process.env.HEALTH_CRITICAL_MAX ?? 0.5);
++const HEALTH_MED    = Number(process.env.HEALTH_MEDIUM_MAX   ?? 0.9);
++
++export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
++  try {
++    const now = new Date();
++    const upcomingTo = new Date(now.getTime() + UPCOMING_DAYS*24*60*60*1000);
++
++    const [{ critical_from_alerts }] = await db
++      .select({ critical_from_alerts: sql<number>`count(distinct ${alerts.equipmentId})` })
++      .from(alerts)
++      .where(and(
++        inArray(alerts.level, ['urgent','critical']),
++        sql`(${alerts.status}) = 'open'`
++      ));
++
++    const [{ critical_from_equipment }] = await db
++      .select({ critical_from_equipment: sql<number>`count(*)` })
++      .from(equipment)
++      .where(and(
++        isNull(equipment.deletedAt),
++        or(
++          sql`(${equipment.status}) = 'overdue'`,
++          lt(equipment.nextDueDate, now),
++          lte(equipment.healthScore, HEALTH_CRIT)
++        )
++      ));
++
++    const critical = Number(critical_from_alerts) + Number(critical_from_equipment);
++
++    const [{ medium }] = await db
++      .select({ medium: sql<number>`count(*)` })
++      .from(equipment)
++      .where(and(
++        isNull(equipment.deletedAt),
++        not(or(
++          sql`(${equipment.status}) = 'overdue'`,
++          lt(equipment.nextDueDate, now),
++          lte(equipment.healthScore, HEALTH_CRIT)
++        )),
++        or(
++          and(gte(equipment.nextDueDate, now), lte(equipment.nextDueDate, upcomingTo)),
++          inArray(equipment.alertLevel, ['warning','medium']),
++          and(sql`${equipment.healthScore} > ${HEALTH_CRIT}`, lte(equipment.healthScore, HEALTH_MED))
++        )
++      ));
++
++    const [{ total_active }] = await db
++      .select({ total_active: sql<number>`count(*)` })
++      .from(equipment)
++      .where(isNull(equipment.deletedAt));
++
++    const good = Math.max(0, Number(total_active) - (Number(critical) + Number(medium)));
++
++    res.status(200).json({ critical, medium: Number(medium), good });
++  } catch (e) {
++    console.error('equipment-alerts/summary', e);
++    res.status(500).json({ error: 'FAILED_TO_COMPUTE_EQUIPMENT_SUMMARY' });
++  }
++}
++
+*** End Patch
+*** Add File: src/pages/api/equipment-alerts/overview.ts
++import type { NextApiRequest, NextApiResponse } from 'next';
++import { and, or, lt, gte, lte, inArray, isNull, not, sql } from 'drizzle-orm';
++import { db } from '@/db';
++import { equipment, alerts } from '@/db/schema';
++
++const UPCOMING_DAYS = Number(process.env.UPCOMING_WINDOW_DAYS ?? 30);
++const HEALTH_CRIT   = Number(process.env.HEALTH_CRITICAL_MAX ?? 0.5);
++const HEALTH_MED    = Number(process.env.HEALTH_MEDIUM_MAX   ?? 0.9);
++
++export default async function handler(req: NextApiRequest, res: NextApiResponse) {
++  try {
++    const now = new Date();
++    const upcomingTo = new Date(now.getTime() + UPCOMING_DAYS*24*60*60*1000);
++    const limit = Math.min(Number(req.query.limit ?? 100), 200);
++
++    const baseSelect = {
++      id: equipment.id, name: equipment.name, code: equipment.code,
++      status: equipment.status, alert_level: equipment.alertLevel,
++      next_due_date: equipment.nextDueDate, health_score: equipment.healthScore
++    };
++
++    const criticalItems = await db
++      .select(baseSelect)
++      .from(equipment)
++      .where(and(
++        isNull(equipment.deletedAt),
++        or(
++          sql`exists (select 1 from ${alerts} a where a.${alerts.equipmentId} = ${equipment.id} and a.${alerts.status} = 'open' and a.${alerts.level} in ('urgent','critical'))`,
++          sql`(${equipment.status}) = 'overdue'`,
++          lt(equipment.nextDueDate, now),
++          lte(equipment.healthScore, HEALTH_CRIT)
++        )
++      ))
++      .orderBy(sql`${equipment.status} desc`, equipment.nextDueDate, equipment.healthScore)
++      .limit(limit);
++
++    const mediumItems = await db
++      .select(baseSelect)
++      .from(equipment)
++      .where(and(
++        isNull(equipment.deletedAt),
++        not(or(
++          sql`exists (select 1 from ${alerts} a where a.${alerts.equipmentId} = ${equipment.id} and a.${alerts.status} = 'open' and a.${alerts.level} in ('urgent','critical'))`,
++          sql`(${equipment.status}) = 'overdue'`,
++          lt(equipment.nextDueDate, now),
++          lte(equipment.healthScore, HEALTH_CRIT)
++        )),
++        or(
++          and(gte(equipment.nextDueDate, now), lte(equipment.nextDueDate, upcomingTo)),
++          inArray(equipment.alertLevel, ['warning','medium']),
++          and(sql`${equipment.healthScore} > ${HEALTH_CRIT}`, lte(equipment.healthScore, HEALTH_MED))
++        )
++      ))
++      .orderBy(equipment.nextDueDate)
++      .limit(limit);
++
++    const goodItems = await db
++      .select(baseSelect)
++      .from(equipment)
++      .where(and(
++        isNull(equipment.deletedAt),
++        not(or(
++          sql`exists (select 1 from ${alerts} a where a.${alerts.equipmentId} = ${equipment.id} and a.${alerts.status} = 'open' and a.${alerts.level} in ('urgent','critical'))`,
++          sql`(${equipment.status}) = 'overdue'`,
++          lt(equipment.nextDueDate, now),
++          lte(equipment.healthScore, HEALTH_MED)
++        ))
++      ))
++      .orderBy(equipment.name)
++      .limit(limit);
++
++    res.status(200).json({
++      critical: { count: criticalItems.length, items: criticalItems },
++      medium:   { count: mediumItems.length,   items: mediumItems },
++      good:     { count: goodItems.length,     items: goodItems },
++    });
++  } catch (e) {
++    console.error('equipment-alerts/overview', e);
++    res.status(500).json({ error: 'FAILED_TO_COMPUTE_EQUIPMENT_OVERVIEW' });
++  }
++}
++
+*** End Patch
+*** Add File: src/components/EquipmentSummaryCards.tsx
++import { useQuery } from '@tanstack/react-query';
++
++type Summary = { critical: number; medium: number; good: number };
++
++function Card({ title, value, className }: { title: string; value: number | string; className: string }) {
++  return (
++    <div className={`rounded-xl border p-4 ${className}`}>
++      <div className="text-sm text-gray-700 font-medium">{title}</div>
++      <div className="mt-2 text-3xl font-semibold">{value}</div>
++    </div>
++  );
++}
++
++export default function EquipmentSummaryCards() {
++  const { data, isLoading } = useQuery<Summary>({
++    queryKey: ['equipment-alerts','summary'],
++    queryFn: async () => (await fetch('/api/equipment-alerts/summary', { credentials:'include' })).json(),
++    refetchInterval: 60_000,
++  });
++  const v = (n?: number) => (isLoading || n===undefined ? '—' : n);
++
++  return (
++    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
++      <Card title="Critical" value={v(data?.critical)} className="border-red-300 bg-red-50" />
++      <Card title="Medium"   value={v(data?.medium)}   className="border-yellow-300 bg-yellow-50" />
++      <Card title="Good"     value={v(data?.good)}     className="border-green-300 bg-green-50" />
++    </div>
++  );
++}
++
+*** End Patch
+*** Add File: src/components/EquipmentLists.tsx
++import { useQuery } from '@tanstack/react-query';
++
++type Device = {
++  id: string; name: string; code?: string|null;
++  status?: string|null; alert_level?: string|null;
++  next_due_date?: string|null; health_score?: number|null;
++};
++type Overview = {
++  critical: { count: number; items: Device[] };
++  medium:   { count: number; items: Device[] };
++  good:     { count: number; items: Device[] };
++};
++
++function Pill({ text }: { text: string | number }) {
++  return <span className="px-2 py-[2px] text-[11px] rounded-full border bg-white">{text}</span>;
++}
++
++function Section({ title, colorClass, items }: { title: string; colorClass: string; items: Device[] }) {
++  return (
++    <div className="rounded-xl border bg-white">
++      <div className={`px-4 py-3 border-b ${colorClass}`}>
++        <h3 className="font-medium">{title}</h3>
++      </div>
++      <ul className="divide-y">
++        {items.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No devices</li>}
++        {items.map((d) => (
++          <li key={d.id} className="px-4 py-3 flex items-center justify-between">
++            <div>
++              <div className="font-medium">{d.name}{d.code ? ` — ${d.code}` : ''}</div>
++              <div className="text-xs text-gray-500">
++                {d.alert_level ? `Level: ${d.alert_level}` : ''}{d.alert_level && (d.status || d.next_due_date) ? ' • ' : ''}
++                {d.status ? `Status: ${d.status}` : ''}{d.status && d.next_due_date ? ' • ' : ''}
++                {d.next_due_date ? `Due: ${new Date(d.next_due_date).toLocaleDateString()}` : ''}
++              </div>
++            </div>
++            {typeof d.health_score === 'number' ? <Pill text={`Health ${Math.round(d.health_score*100)}%`} /> : null}
++          </li>
++        ))}
++      </ul>
++    </div>
++  );
++}
++
++export default function EquipmentLists() {
++  const { data, isLoading } = useQuery<Overview>({
++    queryKey: ['equipment-alerts','overview'],
++    queryFn: async () => (await fetch('/api/equipment-alerts/overview?limit=100', { credentials:'include' })).json(),
++    refetchInterval: 60_000,
++  });
++  if (isLoading || !data) return <div className="text-sm text-gray-500">Loading equipment…</div>;
++  return (
++    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
++      <Section title={`Critical (${data.critical.count})`} colorClass="bg-red-50 border-red-200" items={data.critical.items} />
++      <Section title={`Medium (${data.medium.count})`}   colorClass="bg-yellow-50 border-yellow-200" items={data.medium.items} />
++      <Section title={`Good (${data.good.count})`}       colorClass="bg-green-50 border-green-200" items={data.good.items} />
++    </div>
++  );
++}
++
+*** End Patch
+*** Update File: src/pages/dashboard.tsx
+@@
+-import React from 'react';
+-// كانت تعرض Maintenance Alerts
++import React from 'react';
++import EquipmentSummaryCards from '@/components/EquipmentSummaryCards';
++import EquipmentLists from '@/components/EquipmentLists';
+ 
+ export default function Dashboard() {
+   return (
+     <div className="space-y-6">
+-      <h1 className="text-2xl font-semibold">Maintenance Alerts</h1>
+-      {/* البطاقات القديمة + Active Alerts حُذفت */}
+-      {/* ... */}
++      <h1 className="text-2xl font-semibold">Equipment Alerts</h1>
++      <EquipmentSummaryCards />
++      <EquipmentLists />
+     </div>
+   );
+ }
+*** End Patch
+*** Update File: .env.example
+@@
+-UPCOMING_WINDOW_DAYS=30
+-HEALTH_CRITICAL_MAX=0.5
+-HEALTH_MEDIUM_MAX=0.9
++UPCOMING_WINDOW_DAYS=30
++HEALTH_CRITICAL_MAX=0.5
++HEALTH_MEDIUM_MAX=0.9
+*** End Patch

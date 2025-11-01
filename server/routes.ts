@@ -1271,6 +1271,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // Equipment Alerts Summary routes
+  // ============================================
+
+  // Get equipment alerts summary (counts only)
+  app.get("/api/equipment-alerts/summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const summary = await storage.getEquipmentAlertsSummary(userId);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching equipment alerts summary:", error);
+      res.status(500).json({ message: "Failed to fetch equipment alerts summary" });
+    }
+  });
+
+  // Get equipment alerts overview (with items)
+  app.get("/api/equipment-alerts/overview", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const limit = Math.min(Number(req.query.limit ?? 100), 200);
+      const overview = await storage.getEquipmentAlertsOverview(userId, limit);
+      res.json(overview);
+    } catch (error) {
+      console.error("Error fetching equipment alerts overview:", error);
+      res.status(500).json({ message: "Failed to fetch equipment alerts overview" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

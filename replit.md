@@ -16,7 +16,7 @@ Preferred communication style: Simple, everyday language.
 - **Pages**:
     - **Maintenance Records Page**: Advanced filtering, interactive table, add maintenance dialog, details sheet for comprehensive record management.
     - **Equipment Management Page**: Free-text facility/location entry, enhanced data tracking, toggleable List/Grid views, Recharts-based data visualizations, color-coded badges, search/filter, Sheet component for equipment details (Overview, Maintenance & Alerts, Location & Facility, History) with QR code.
-    - **Analytics Dashboard Page**: Real-time analytics with dynamic filter panel, 6 KPI widgets, 3 interactive charts (Equipment Status, Maintenance Priority, Equipment by Facility), and a filtered equipment table. Auto-synchronization and memoized calculations for performance.
+    - **Analytics Dashboard Page**: Real-time analytics with dynamic filter panel, Equipment Status Overview section with mutually-exclusive categorization (Critical/Medium/Good), 6 KPI widgets, 3 interactive charts (Equipment Status, Maintenance Priority, Equipment by Facility), and a filtered equipment table. Auto-synchronization and memoized calculations for performance.
 - **Enhanced Equipment Details View**: Displays enriched equipment data with equipment image gallery in Overview tab (supports external URLs with error handling), maintenance progress indicator, active alerts with severity-based color coding, and visual maintenance timeline in History tab with color-coded status indicators (green=completed, yellow=in-progress, blue=pending), technician details, and cost tracking.
 
 ### Backend Architecture
@@ -29,7 +29,7 @@ Preferred communication style: Simple, everyday language.
     - **Maintenance Scheduling**: Manages maintenance schedules, updates statuses (e.g., "Overdue"), and integrates with equipment records. Includes technician assignment and frequency-based auto-rescheduling.
     - **Contract Expiry Detection**: Scans active contracts, generates three-tier alerts (30-day, 7-day, expired), and supports auto-renewal.
     - **Maintenance Record Generation**: SQL function `generate_maintenance_records(days_ahead INT)` automatically creates records from schedules and critical alerts, preventing duplicates, updating equipment status, and ensuring user scoping.
-- **Analytics Endpoints**: Four dashboard analytics endpoints, including Server-Sent Events (SSE) for real-time updates with hash-based change detection, and static/live JavaScript widgets.
+- **Analytics Endpoints**: Six dashboard analytics endpoints including Server-Sent Events (SSE) for real-time updates with hash-based change detection, static/live JavaScript widgets, and Equipment Alerts endpoints (`/api/equipment-alerts/summary` and `/api/equipment-alerts/overview`) with mutually-exclusive categorization logic (Critical: red/overdue/decommissioned, Medium: orange/urgent excluding critical, Good: green/active excluding critical).
 - **Status-Filtered Equipment Endpoint**: Advanced filtering (`/api/equipment/status`) for maintenance views (overdue, upcoming, resolved, critical, all) with full-text search, pagination, and multi-field sorting.
 - **Maintenance Record Management API**: Comprehensive CRUD operations for maintenance records, including advanced filtering, creation with automatic equipment status updates ("Under Maintenance"), and completion with automated workflows (alert resolution, status update to "Active", next scheduled date calculation, verification support).
 

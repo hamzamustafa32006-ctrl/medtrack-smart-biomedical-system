@@ -42,7 +42,7 @@ import {
   type InsertAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, gte, lte } from "drizzle-orm";
+import { eq, and, desc, gte, lte, or, ne, sql } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -155,6 +155,18 @@ export interface IStorage {
     healthy: number;
     resolved_this_week: number;
     due_next_7d: number;
+  }>;
+
+  // Equipment Alerts operations
+  getEquipmentAlertsSummary(userId: string): Promise<{
+    critical: number;
+    medium: number;
+    good: number;
+  }>;
+  getEquipmentAlertsOverview(userId: string, limit: number): Promise<{
+    critical: { count: number; items: Equipment[] };
+    medium: { count: number; items: Equipment[] };
+    good: { count: number; items: Equipment[] };
   }>;
 }
 
@@ -1750,8 +1762,6 @@ export class DatabaseStorage implements IStorage {
     resolved_this_week: number;
     due_next_7d: number;
   }> {
-    const { sql } = await import("drizzle-orm");
-    
     const [summary] = await db
       .select({
         total: sql<number>`COUNT(*)::int`,
@@ -1771,6 +1781,109 @@ export class DatabaseStorage implements IStorage {
       .where(eq(equipment.userId, userId));
     
     return summary;
+  }
+
+  // ============================================
+  // Equipment Alerts operations
+  // ============================================
+
+  async getEquipmentAlertsSummary(userId: string): Promise<{
+    critical: number;
+    medium: number;
+    good: number;
+  }> {
+    const [counts] = await db
+      .select({
+        critical: sql<number>`COUNT(*) FILTER (
+          WHERE ${equipment.statusColor} = 'red' 
+            OR ${equipment.isOverdue} = true
+            OR ${equipment.status} = 'Decommissioned'
+        )::int`,
+        medium: sql<number>`COUNT(*) FILTER (
+          WHERE (${equipment.statusColor} = 'orange' OR ${equipment.priority} = 'Urgent')
+            AND ${equipment.statusColor} != 'red'
+            AND ${equipment.isOverdue} IS NOT true
+            AND ${equipment.status} != 'Decommissioned'
+        )::int`,
+        good: sql<number>`COUNT(*) FILTER (
+          WHERE ${equipment.statusColor} = 'green'
+            AND ${equipment.status} = 'Active'
+            AND ${equipment.isOverdue} IS NOT true
+        )::int`,
+      })
+      .from(equipment)
+      .where(eq(equipment.userId, userId));
+    
+    return counts;
+  }
+
+  async getEquipmentAlertsOverview(userId: string, limit: number): Promise<{
+    critical: { count: number; items: Equipment[] };
+    medium: { count: number; items: Equipment[] };
+    good: { count: number; items: Equipment[] };
+  }> {
+    // Get critical equipment
+    const criticalItems = await db
+      .select()
+      .from(equipment)
+      .where(
+        and(
+          eq(equipment.userId, userId),
+          or(
+            eq(equipment.statusColor, 'red'),
+            eq(equipment.isOverdue, true),
+            eq(equipment.status, 'Decommissioned')
+          )
+        )
+      )
+      .orderBy(desc(equipment.isOverdue), equipment.nextDueDate)
+      .limit(limit);
+
+    // Get medium priority equipment (excluding critical items)
+    const mediumItems = await db
+      .select()
+      .from(equipment)
+      .where(
+        and(
+          eq(equipment.userId, userId),
+          or(
+            eq(equipment.statusColor, 'orange'),
+            eq(equipment.priority, 'Urgent')
+          ),
+          ne(equipment.statusColor, 'red'),
+          ne(equipment.status, 'Decommissioned'),
+          or(
+            eq(equipment.isOverdue, false),
+            sql`${equipment.isOverdue} IS NULL`
+          )
+        )
+      )
+      .orderBy(equipment.nextDueDate)
+      .limit(limit);
+
+    // Get good/healthy equipment (excluding critical and medium)
+    const goodItems = await db
+      .select()
+      .from(equipment)
+      .where(
+        and(
+          eq(equipment.userId, userId),
+          eq(equipment.statusColor, 'green'),
+          eq(equipment.status, 'Active'),
+          or(
+            eq(equipment.isOverdue, false),
+            sql`${equipment.isOverdue} IS NULL`
+          )
+        )
+      )
+      .orderBy(equipment.name)
+      .limit(limit);
+
+    return {
+      critical: { count: criticalItems.length, items: criticalItems },
+      medium: { count: mediumItems.length, items: mediumItems },
+      good: { count: goodItems.length, items: goodItems },
+    };
   }
 }
 

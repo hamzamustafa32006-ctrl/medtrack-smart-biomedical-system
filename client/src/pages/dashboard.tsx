@@ -19,6 +19,8 @@ import {
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { Equipment } from "@shared/schema";
 import { formatDate } from "@/lib/dateUtils";
+import EquipmentSummaryCards from "@/components/EquipmentSummaryCards";
+import EquipmentStatusLists from "@/components/EquipmentStatusLists";
 
 type FilterState = {
   maintenanceStatus: string;
@@ -217,6 +219,16 @@ export default function Dashboard() {
       </div>
 
       <div className="container mx-auto px-4 py-6 max-w-7xl">
+        {/* Equipment Alerts Section */}
+        <div className="mb-6 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold mb-1">Equipment Status Overview</h2>
+            <p className="text-sm text-muted-foreground">Monitor equipment health and maintenance status</p>
+          </div>
+          <EquipmentSummaryCards />
+          <EquipmentStatusLists />
+        </div>
+
         {/* Filter Panel */}
         <Card className="mb-6">
           <CardHeader>
