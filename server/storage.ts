@@ -189,14 +189,22 @@ export class DatabaseStorage implements IStorage {
     // Handle both ID and email conflicts
     // First, try to insert. If conflict on ID, update. If conflict on email, update that user.
     try {
+      // In development mode, make all new users admins for easier testing
+      const isDev = process.env.NODE_ENV === 'development';
+      const insertData = {
+        ...userData,
+        role: isDev ? 'admin' : (userData.role || 'technician'),
+      };
+      
       const [user] = await db
         .insert(users)
-        .values(userData)
+        .values(insertData)
         .onConflictDoUpdate({
           target: users.id,
           set: {
             ...userData,
             updatedAt: new Date(),
+            // Don't override role on update
           },
         })
         .returning();

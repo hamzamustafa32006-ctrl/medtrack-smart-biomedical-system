@@ -1,0 +1,108 @@
+-- =====================================================
+-- Generate maintenance_records automatically (English statuses)
+-- =====================================================
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+BEGIN;
+
+-- 1️⃣ Create maintenance records from upcoming or overdue schedules
+INSERT INTO maintenance_records (id, equipment_id, technician_id, maintenance_type, description, actions_taken, parts_used, cost, status, created_at)
+SELECT
+  gen_random_uuid(),
+  ms.equipment_id,
+  CASE f.id
+    WHEN 'fac-001' THEN 'tech-001'
+    WHEN 'fac-002' THEN 'tech-002'
+    WHEN 'fac-003' THEN 'tech-003'
+    ELSE 'tech-001'
+  END AS technician_id,
+  ms.maintenance_type,
+  CONCAT('Auto-generated maintenance record for schedule - next due date: ', ms.next_due_date::text),
+  NULL,
+  NULL,
+  0.00,
+  'In Progress',
+  NOW()
+FROM maintenance_schedules ms
+JOIN equipment e ON e.id = ms.equipment_id
+LEFT JOIN facilities f ON f.id = e.facility_id
+WHERE (ms.next_due_date IS NOT NULL AND (ms.next_due_date <= NOW() + INTERVAL '7 days' OR ms.status = 'Overdue'))
+AND NOT EXISTS (
+  SELECT 1 FROM maintenance_records mr
+  WHERE mr.equipment_id = ms.equipment_id
+    AND mr.maintenance_type = ms.maintenance_type
+    AND mr.status IN ('In Progress','Pending Verification')
+);
+
+-- 2️⃣ Create maintenance records for critical alerts
+INSERT INTO maintenance_records (id, equipment_id, technician_id, maintenance_type, description, actions_taken, parts_used, cost, status, created_at)
+SELECT
+  gen_random_uuid(),
+  a.equipment_id,
+  CASE a.facility_id
+    WHEN 'fac-001' THEN 'tech-001'
+    WHEN 'fac-002' THEN 'tech-002'
+    WHEN 'fac-003' THEN 'tech-003'
+    ELSE 'tech-001'
+  END AS technician_id,
+  'Corrective',
+  CONCAT('Auto-generated from critical alert: ', a.title, ' - ', a.message),
+  NULL,
+  NULL,
+  0.00,
+  'In Progress',
+  NOW()
+FROM alerts a
+WHERE a.severity = 'Critical'
+  AND a.status = 'Open'
+  AND a.equipment_id IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1 FROM maintenance_records mr
+  WHERE mr.equipment_id = a.equipment_id
+    AND mr.maintenance_type = 'Corrective'
+    AND mr.status IN ('In Progress','Pending Verification')
+);
+
+-- 3️⃣ Create maintenance tasks for each new record
+INSERT INTO maintenance_tasks (id, maintenance_id, task_name, assigned_to, due_date, completed, remarks, created_at)
+SELECT
+  gen_random_uuid(),
+  mr.id,
+  CASE
+    WHEN mr.maintenance_type = 'Preventive' THEN 'Perform scheduled preventive maintenance'
+    WHEN mr.maintenance_type = 'Calibration' THEN 'Perform calibration and record readings'
+    WHEN mr.maintenance_type = 'Corrective' THEN 'Diagnose and fix reported malfunction'
+    ELSE 'General maintenance task'
+  END,
+  mr.technician_id,
+  NOW() + INTERVAL '2 days',
+  FALSE,
+  'Auto-generated maintenance task',
+  NOW()
+FROM maintenance_records mr
+WHERE mr.created_at >= NOW() - INTERVAL '10 minutes'
+  AND NOT EXISTS (SELECT 1 FROM maintenance_tasks mt WHERE mt.maintenance_id = mr.id);
+
+-- 4️⃣ Update equipment status in English
+UPDATE equipment
+SET status = 'Not Working'
+WHERE id IN (
+  SELECT a.equipment_id FROM alerts a
+  WHERE a.severity = 'Critical' AND a.status = 'Open'
+)
+AND status IS DISTINCT FROM 'Not Working';
+
+UPDATE equipment
+SET status = 'Needs Maintenance'
+WHERE id IN (
+  SELECT ms.equipment_id FROM maintenance_schedules ms
+  WHERE (ms.next_due_date IS NOT NULL AND (ms.next_due_date <= NOW() + INTERVAL '7 days' OR ms.status = 'Overdue'))
+)
+AND status = 'Good';
+
+COMMIT;
+
+-- =====================================================
+-- ✅ English-based maintenance record seeding completed
+-- =====================================================
