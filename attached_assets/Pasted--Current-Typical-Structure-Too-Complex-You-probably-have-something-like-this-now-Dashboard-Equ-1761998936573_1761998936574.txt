@@ -1,0 +1,110 @@
+. Current (Typical) Structure — Too Complex
+You probably have something like this now:
+Dashboard
+Equipment
+Maintenance Tasks
+Facilities
+Alerts
+Vendors
+Reports
+Settings
+Help
+Logout
+While functional, it overwhelms users and requires too many clicks.
+✨ 3. Simplified Structure (Recommended)
+Here’s the improved structure using three main sections and one user utility area:
+MAIN NAV:
+🏠 Dashboard
+🧰 Equipment
+🔧 Maintenance
+
+SECONDARY (Collapsible):
+🏢 Facilities
+📈 Reports
+⚙️ Admin / Settings
+
+USER AREA:
+🔔 Alerts
+👤 Profile / Logout
+💡 Everything users need daily (Dashboard, Equipment, Maintenance) is upfront.
+Secondary items are collapsed under a “More” or “Admin” section to reduce visual noise.
+🎨 4. UX Design — New Navigation Layout
+A. Sidebar Navigation (for Desktop)
+A minimal left sidebar with icons + labels.
+<aside className="w-60 bg-gray-50 border-r h-screen flex flex-col">
+  <div className="p-4 font-bold text-lg text-primary">MedTrack</div>
+  <nav className="flex-1">
+    <NavLink icon={<Home />} label="Dashboard" to="/dashboard" />
+    <NavLink icon={<Package />} label="Equipment" to="/equipment" />
+    <NavLink icon={<Wrench />} label="Maintenance" to="/maintenance" />
+    <Divider />
+    <Accordion title="More">
+      <NavLink icon={<Building />} label="Facilities" to="/facilities" />
+      <NavLink icon={<BarChart />} label="Reports" to="/reports" />
+      <NavLink icon={<Settings />} label="Settings" to="/settings" />
+    </Accordion>
+  </nav>
+  <div className="border-t p-3">
+    <NavLink icon={<Bell />} label="Alerts" to="/alerts" badge={alertCount} />
+    <NavLink icon={<User />} label="Profile" to="/profile" />
+  </div>
+</aside>
+✅ Benefits:
+Focus on top 3 tools
+Clean hierarchy
+Easy to scan
+Fits your color palette (white/gray base, primary blue accent)
+B. Top Navigation Bar (for Mobile)
+Compact, icon-based navbar with dropdown.
+<header className="fixed bottom-0 md:hidden bg-white shadow-lg border-t w-full flex justify-around py-2">
+  <NavButton icon={<Home />} to="/dashboard" />
+  <NavButton icon={<Package />} to="/equipment" />
+  <NavButton icon={<Wrench />} to="/maintenance" />
+  <NavDropdown icon={<Menu />} label="More">
+    <NavItem to="/facilities" label="Facilities" />
+    <NavItem to="/reports" label="Reports" />
+    <NavItem to="/settings" label="Settings" />
+  </NavDropdown>
+</header>
+✅ Benefits:
+Clear navigation for technicians on mobile
+Easy thumb reach (bottom nav placement)
+Scalable dropdown for less-used features
+🧩 5. UX Enhancements for Clarity
+✅ A. Active State Indicator
+Use a colored bar or bold icon to indicate current page:
+.active {
+  border-left: 4px solid #2563eb;
+  background-color: #f1f5f9;
+}
+✅ B. Tooltips
+Show quick descriptions on hover for icons:
+<Tooltip label="View all equipment">
+  <NavLink icon={<Package />} to="/equipment" />
+</Tooltip>
+✅ C. Breadcrumbs for Context
+Add breadcrumbs for multi-level pages (like equipment → details):
+Dashboard / Equipment / Ventilator V900
+✅ D. Keyboard Shortcuts (Optional)
+For desktop users:
+Ctrl + 1 → Dashboard
+Ctrl + 2 → Equipment
+Ctrl + 3 → Maintenance
+⚙️ 6. Role-Based Navigation (Optional)
+Let admins see configuration tools, and technicians see operational ones.
+const NAV_ITEMS = user.role === 'admin'
+  ? ['Dashboard','Equipment','Maintenance','Facilities','Reports','Settings']
+  : ['Dashboard','Equipment','Maintenance','Alerts'];
+📊 7. Implementation Plan
+Step	Action	Impact
+1️⃣	Group main menu items (Dashboard, Equipment, Maintenance)	Simplifies layout
+2️⃣	Move Facilities, Reports, Settings into collapsible “More” section	Reduces clutter
+3️⃣	Add bottom nav bar for mobile users	Improves mobile UX
+4️⃣	Add breadcrumbs and active highlighting	Improves context
+5️⃣	Add role-based visibility (admin vs engineer)	Personalizes experience
+✅ 8. Acceptance Criteria
+ Top 3 tools (Dashboard, Equipment, Maintenance) always visible
+ Secondary tools hidden behind “More” section
+ Mobile navigation uses bottom bar
+ Active states clearly visible
+ Navigation auto-adjusts for user role

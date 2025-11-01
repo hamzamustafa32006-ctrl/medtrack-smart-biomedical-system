@@ -1,11 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { Bell, ClipboardList, History, Settings } from "lucide-react";
+import { Home, ClipboardList, CheckSquare, AlertTriangle } from "lucide-react";
 
 const navItems = [
-  { path: "/", icon: Bell, label: "Alerts", testId: "nav-alerts" },
+  { path: "/", icon: Home, label: "Dashboard", testId: "nav-dashboard" },
   { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "nav-equipment" },
-  { path: "/history", icon: History, label: "History", testId: "nav-history" },
-  { path: "/settings", icon: Settings, label: "Settings", testId: "nav-settings" },
+  { path: "/tasks", icon: CheckSquare, label: "Tasks", testId: "nav-tasks" },
+  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "nav-alerts" },
 ];
 
 export function BottomNav() {

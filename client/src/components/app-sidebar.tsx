@@ -1,28 +1,40 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarFooter,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal } from "lucide-react";
 
-const navItems = [
-  { path: "/", icon: Home, label: "Home", testId: "nav-home" },
-  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "nav-alerts" },
-  { path: "/tasks", icon: CheckSquare, label: "Tasks", testId: "nav-tasks" },
-  { path: "/facilities", icon: Building2, label: "Facilities", testId: "nav-facilities" },
+const mainNavItems = [
+  { path: "/", icon: Home, label: "Dashboard", testId: "nav-dashboard" },
   { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "nav-equipment" },
-  { path: "/history", icon: History, label: "History", testId: "nav-history" },
+  { path: "/tasks", icon: CheckSquare, label: "Maintenance", testId: "nav-maintenance" },
+];
+
+const secondaryNavItems = [
+  { path: "/facilities", icon: Building2, label: "Facilities", testId: "nav-facilities" },
+  { path: "/history", icon: History, label: "Reports", testId: "nav-reports" },
   { path: "/settings", icon: Settings, label: "Settings", testId: "nav-settings" },
+];
+
+const userNavItems = [
+  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "nav-alerts" },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   return (
     <Sidebar>
@@ -31,14 +43,16 @@ export function AppSidebar() {
           <div className="w-8 h-8 bg-sidebar-primary rounded-md flex items-center justify-center">
             <Bell className="w-5 h-5 text-sidebar-primary-foreground" />
           </div>
-          <h2 className="font-bold text-sidebar-foreground">Maintenance Alert</h2>
+          <h2 className="font-bold text-sidebar-foreground">MedTrack</h2>
         </div>
       </SidebarHeader>
-      <SidebarContent>
+      
+      <SidebarContent className="flex flex-col">
+        {/* Main Navigation */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {mainNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location === item.path;
                 
@@ -56,7 +70,66 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <SidebarSeparator />
+
+        {/* Secondary Navigation (Collapsible) */}
+        <SidebarGroup>
+          <Collapsible open={isMoreOpen} onOpenChange={setIsMoreOpen}>
+            <CollapsibleTrigger asChild>
+              <SidebarGroupLabel className="cursor-pointer hover-elevate active-elevate-2 rounded-md flex items-center justify-between" data-testid="button-more-toggle">
+                <div className="flex items-center gap-2">
+                  <MoreHorizontal className="w-4 h-4" />
+                  <span>More</span>
+                </div>
+                <ChevronDown className={`w-4 h-4 transition-transform ${isMoreOpen ? "rotate-180" : ""}`} />
+              </SidebarGroupLabel>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {secondaryNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = location === item.path;
+                    
+                    return (
+                      <SidebarMenuItem key={item.path}>
+                        <SidebarMenuButton asChild isActive={isActive} data-testid={item.testId}>
+                          <Link href={item.path}>
+                            <Icon className="w-5 h-5" />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </SidebarGroup>
       </SidebarContent>
+
+      {/* User Area at Bottom */}
+      <SidebarFooter className="border-t border-sidebar-border p-2">
+        <SidebarMenu>
+          {userNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location === item.path;
+            
+            return (
+              <SidebarMenuItem key={item.path}>
+                <SidebarMenuButton asChild isActive={isActive} data-testid={item.testId}>
+                  <Link href={item.path}>
+                    <Icon className="w-5 h-5" />
+                    <span>{item.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   );
 }
