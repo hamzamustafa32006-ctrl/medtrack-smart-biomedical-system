@@ -39,15 +39,33 @@ Preferred communication style: Simple, everyday language.
 - Conditional rendering based on screen size (mobile vs. desktop navigation)
 
 **Equipment Management Page** (`client/src/pages/equipment.tsx`)
-- Modern table view with sortable columns (Name, Location, Status, Criticality)
-- Status badges (Operational: green, Maintenance: yellow, Decommissioned: gray)
-- Criticality badges (Critical: red, High: orange, Medium: yellow, Low: blue)
+- **Enhanced Data Tracking**: Additional fields for biomedical equipment management
+  - imageUrl: Equipment photos or uploaded images
+  - calibrationRequired: Boolean flag for calibration requirements
+  - calibrationDate: Last calibration date tracking
+  - condition: Equipment condition enum (Excellent, Good, Needs Repair, Critical)
+  - usageHours: Operational usage hours tracking
+  - department: Department/unit assignment (e.g., ICU, Radiology, Surgery)
+- **View Modes**: Toggle between List (table) and Grid (card) views with responsive layouts
+  - List view: Modern table with sortable columns (Name, Type, Facility, Status, Criticality, Install Date, Next Maintenance)
+  - Grid view: Responsive card layout (1 col mobile, 2 cols tablet, 3 cols desktop) with hover effects
+- **Data Visualizations**: Recharts-based charts for equipment analytics
+  - Status Distribution Pie Chart: Visual breakdown of equipment by status (Active, Under Maintenance, Decommissioned, Pending Installation)
+  - Condition Distribution Bar Chart: Condition overview (Excellent, Good, Needs Repair, Critical)
+- **Badge System**: Color-coded visual indicators
+  - Status badges (Active: green outline, Under Maintenance: yellow, Decommissioned: gray, Pending Installation: blue outline)
+  - Criticality badges (High: red destructive, Medium: orange, Low: green outline)
+  - Condition badges (Excellent: green outline, Good: blue outline, Needs Repair: orange, Critical: red destructive)
 - Search functionality for equipment names
 - Filter dropdowns for facility, status, and criticality
 - Equipment Detail Dashboard (Sheet component, 700px width):
   - **Enhanced Header**: Equipment name (2xl bold), manufacturer • model subtitle, status & criticality badges
   - **Tabbed Interface** (4 tabs):
-    1. **Overview Tab**: 2-column grid with InfoItem helper showing Equipment ID, Serial Number, Criticality badge, Install Date, Purchase Date, Warranty Expiry, Barcode; Service Contracts section; Equipment Notes card
+    1. **Overview Tab**: 
+       - 2-column grid with InfoItem helper showing Equipment ID, Serial Number, Criticality, Condition, Department, Install Date, Purchase Date, Warranty Expiry, Calibration Required, Last Calibration, Usage Hours, Barcode
+       - **QR Code Display**: Auto-generated QR code for equipment ID (128px, high error correction level) with scan prompt
+       - Service Contracts section
+       - Equipment Notes card
     2. **Maintenance & Alerts Tab**: Next Maintenance card (large date + color-coded countdown: red if overdue, orange if ≤7 days), Last Maintenance card, Maintenance Schedule card, Active Alerts placeholder
     3. **Location & Facility Tab**: Card showing Facility name, Department/Area, Floor, Room with Building2 icon
     4. **History Tab**: Maintenance History table (fetches from `/api/maintenance-records`, filters by equipmentId, sorts by date descending) showing Date, Type, Status (Completed/Pending badges), Performed By, Notes; Equipment Notes section; Add Service Contract button
@@ -127,7 +145,7 @@ Preferred communication style: Simple, everyday language.
 - `users` - User profiles with roles (admin, supervisor, technician, viewer), notification preferences, timezone (Kuwait default)
 - `facilities` - Facility/building hierarchy with codes and addresses
 - `locations` - Specific locations within facilities (floor, room, department)
-- `equipment` - Equipment tracking with facility/location refs, manufacturer, model, serial, status, criticality, barcode, install dates
+- `equipment` - Equipment tracking with facility/location refs, manufacturer, model, serial, status, criticality, barcode, install dates, **enhanced biomedical fields**: imageUrl (equipment photos), calibrationRequired/calibrationDate (calibration tracking), condition enum (Excellent/Good/Needs Repair/Critical), usageHours (operational hours), department (unit assignment)
 - `contracts` - Service contracts (vendor info, dates, alert thresholds)
 - `maintenanceRecords` - Maintenance history (dates, types, completion status)
 - `maintenancePlans` - Scheduled maintenance definitions (frequency, buffer days, checklist, policy: PM/Calibration/Safety)
