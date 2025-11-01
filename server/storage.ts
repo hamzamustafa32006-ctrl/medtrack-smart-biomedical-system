@@ -773,7 +773,23 @@ export class DatabaseStorage implements IStorage {
       technicianId?: string;
     }
   ): Promise<any[]> {
-    let query = db
+    // Build where conditions
+    const conditions: any[] = [eq(maintenanceRecords.userId, userId)];
+    
+    if (filters?.equipmentId) {
+      conditions.push(eq(maintenanceRecords.equipmentId, filters.equipmentId));
+    }
+    if (filters?.status) {
+      conditions.push(eq(maintenanceRecords.status, filters.status));
+    }
+    if (filters?.maintenanceType) {
+      conditions.push(eq(maintenanceRecords.maintenanceType, filters.maintenanceType));
+    }
+    if (filters?.technicianId) {
+      conditions.push(eq(maintenanceRecords.technicianId, filters.technicianId));
+    }
+
+    const records = await db
       .select({
         id: maintenanceRecords.id,
         equipmentId: maintenanceRecords.equipmentId,
@@ -804,24 +820,9 @@ export class DatabaseStorage implements IStorage {
       .from(maintenanceRecords)
       .leftJoin(equipment, eq(maintenanceRecords.equipmentId, equipment.id))
       .leftJoin(facilities, eq(equipment.facilityId, facilities.id))
-      .where(eq(maintenanceRecords.userId, userId))
-      .$dynamic();
+      .where(and(...conditions))
+      .orderBy(desc(maintenanceRecords.maintenanceDate));
 
-    // Apply filters
-    if (filters?.equipmentId) {
-      query = query.where(eq(maintenanceRecords.equipmentId, filters.equipmentId));
-    }
-    if (filters?.status) {
-      query = query.where(eq(maintenanceRecords.status, filters.status));
-    }
-    if (filters?.maintenanceType) {
-      query = query.where(eq(maintenanceRecords.maintenanceType, filters.maintenanceType));
-    }
-    if (filters?.technicianId) {
-      query = query.where(eq(maintenanceRecords.technicianId, filters.technicianId));
-    }
-
-    const records = await query.orderBy(desc(maintenanceRecords.maintenanceDate));
     return records;
   }
 
