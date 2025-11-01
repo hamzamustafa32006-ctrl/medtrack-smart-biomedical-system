@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
     - **Maintenance Records Page**: Advanced filtering, interactive table, add maintenance dialog, details sheet for comprehensive record management.
     - **Equipment Management Page**: Free-text facility/location entry, enhanced data tracking, toggleable List/Grid views, Recharts-based data visualizations, color-coded badges, search/filter, Sheet component for equipment details (Overview, Maintenance & Alerts, Location & Facility, History) with QR code.
     - **Analytics Dashboard Page**: Real-time analytics with dynamic filter panel, 6 KPI widgets, 3 interactive charts (Equipment Status, Maintenance Priority, Equipment by Facility), and a filtered equipment table. Auto-synchronization and memoized calculations for performance.
-- **Enhanced Equipment Details View**: Displays enriched equipment data, maintenance progress indicator, active alerts with severity-based color coding, and an enhanced history tab with technician details and costs.
+- **Enhanced Equipment Details View**: Displays enriched equipment data with equipment image gallery in Overview tab (supports external URLs with error handling), maintenance progress indicator, active alerts with severity-based color coding, and visual maintenance timeline in History tab with color-coded status indicators (green=completed, yellow=in-progress, blue=pending), technician details, and cost tracking.
 
 ### Backend Architecture
 - **Framework & Runtime**: Express.js with Node.js and TypeScript.
@@ -35,7 +35,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Storage
 - **Database Technology**: PostgreSQL via Neon serverless database.
-- **Database Schema**: Drizzle ORM managed. Key tables include `sessions`, `users` (with roles), `roles_permissions`, `facilities`, `locations`, `equipment` (with enhanced biomedical fields, analytics tracking columns like `priority`, `riskScore`, `statusColor`, `daysOverdue`), `contracts`, `maintenanceRecords` (professional fields: `technicianId`, `cost`, `status`, `verificationStatus`), `maintenance_schedules`, `alerts`, `notificationLogs`, `auditLogs`.
+- **Database Schema**: Drizzle ORM managed. Key tables include `sessions`, `users` (with roles), `roles_permissions`, `facilities`, `locations`, `equipment` (with enhanced biomedical fields including `imageUrl` for equipment photos, analytics tracking columns like `priority`, `riskScore`, `statusColor`, `daysOverdue`), `contracts`, `maintenanceRecords` (professional fields: `technicianId`, `cost`, `status`, `verificationStatus`), `maintenance_schedules`, `alerts`, `notificationLogs`, `auditLogs`.
 - **Stored Functions**: `generate_maintenance_records(days_ahead INT)`.
 - **Schema Validation**: Drizzle-Zod for runtime validation.
 - **Data Integrity**: Unique constraints for multi-tenancy.
