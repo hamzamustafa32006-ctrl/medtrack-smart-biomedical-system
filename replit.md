@@ -21,7 +21,14 @@ Preferred communication style: Simple, everyday language.
 - **Authentication & Authorization**: Replit Auth (OIDC) integrated with Passport.js, session storage in PostgreSQL, user-scoped data access enforced.
 - **Data Access Layer**: Storage abstraction with `IStorage` interface, `DatabaseStorage` class, Drizzle ORM for type-safe queries, all queries filtered by `userId`.
 - **Automated Alert Generation**: Daily `node-cron` scheduler (Asia/Kuwait timezone) scans equipment for upcoming `nextDueDate`. Implements a three-tier alert severity (Info, Warning, Critical) with automatic escalation. Uses a production-grade UPSERT pattern with `UNIQUE` constraints to prevent duplicate active alerts and ensure atomic updates, tracking `created`, `updated`, and `skipped` metrics.
-- **Analytics Endpoints**: Three dashboard analytics endpoints serve real-time equipment metrics: `/api/equipment/dashboard-summary` (basic status counts), `/api/analytics/summary` (extended metrics including 7-day resolution and upcoming due dates), and `/widgets/analytics-summary.js` (JavaScript widget that auto-injects dashboard counters into HTML pages). All use efficient SQL aggregation with FILTER clauses for performance.
+- **Analytics Endpoints**: Four dashboard analytics endpoints serve real-time equipment metrics:
+  - `/api/equipment/dashboard-summary`: Basic status counts (total, critical, warning, ok, overdue, urgent)
+  - `/api/analytics/summary`: Extended metrics including 7-day resolution and upcoming due dates
+  - `/api/analytics/stream`: Server-Sent Events (SSE) endpoint for real-time analytics updates with hash-based change detection
+  - `/widgets/analytics-summary.js`: Static JavaScript widget that renders dashboard counters once
+  - `/widgets/analytics-live.js`: Real-time JavaScript widget using EventSource for live updates every 5 seconds
+  
+  All endpoints use the storage abstraction layer with efficient SQL aggregation using FILTER clauses. The SSE implementation includes connection management, automatic cleanup on disconnect, and graceful fallback to polling for browsers without EventSource support.
 
 ### Data Storage
 - **Database Technology**: PostgreSQL via Neon serverless database, WebSocket connection pooling.
