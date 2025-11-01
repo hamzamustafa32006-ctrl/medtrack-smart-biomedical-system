@@ -1,0 +1,118 @@
+-- ===== ADD 12 OVERDUE DEVICES (different from previous ones) =====
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- تأكيد وجود المنشأة والمواقع الأساسية
+INSERT INTO facilities (code, name, address, contact_person, phone)
+VALUES ('ASU-HOSP','ASU Hospital','Kuwait City - AASU','Maintenance Dept.','+965-98765432')
+ON CONFLICT (code) DO NOTHING;
+
+WITH fac AS (SELECT id FROM facilities WHERE code='ASU-HOSP')
+INSERT INTO locations (facility_id, code, name)
+SELECT fac.id, x.code, x.name FROM fac,
+(VALUES
+ ('RAD-M1','Radiology Mobile Bay 1'),
+ ('OR-1','Operating Theatre 1'),
+ ('LAB-CHEM','Lab – Chemistry'),
+ ('LAB-MICRO','Lab – Microbiology'),
+ ('ER-OBS','ER Observation'),
+ ('WARD-B07','Ward B, Bed 7'),
+ ('PHY-THER','Physiotherapy Room'),
+ ('BIO-STORE','Biomedical Store')
+) AS x(code,name)
+ON CONFLICT (facility_id, code) DO NOTHING;
+
+-- تأكد أن أعمدة المعدات موجودة (لن تُغيّر الموجود)
+ALTER TABLE equipment
+  ADD COLUMN IF NOT EXISTS maintenance_freq_days INT,
+  ADD COLUMN IF NOT EXISTS last_maintenance_date DATE,
+  ADD COLUMN IF NOT EXISTS next_due_date DATE,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active',
+  ADD COLUMN IF NOT EXISTS facility_id UUID REFERENCES facilities(id),
+  ADD COLUMN IF NOT EXISTS location_id UUID REFERENCES locations(id),
+  ADD COLUMN IF NOT EXISTS manufacturer TEXT,
+  ADD COLUMN IF NOT EXISTS model TEXT,
+  ADD COLUMN IF NOT EXISTS serial_number TEXT,
+  ADD COLUMN IF NOT EXISTS department TEXT,
+  ADD COLUMN IF NOT EXISTS type TEXT,
+  ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- لو ما عندك فهرس على equipment_id، أضفه لمنع التكرار
+CREATE UNIQUE INDEX IF NOT EXISTS uq_equipment_equipment_id ON equipment(equipment_id);
+
+-- إدراج/تحديث 12 جهاز جديد كلهم متأخرين (next_due_date < اليوم)
+WITH fac AS (SELECT id FROM facilities WHERE code='ASU-HOSP'),
+loc AS (SELECT code, id FROM locations),
+up AS (
+INSERT INTO equipment (
+  id, user_id, name, equipment_id, type, department, manufacturer, model, serial_number,
+  maintenance_freq_days, last_maintenance_date, next_due_date, status, facility_id, location_id, notes
+) VALUES
+-- 1) Portable Ultrasound
+(gen_random_uuid()::text,'seed','Portable Ultrasound','EQ-101','Ultrasound','ER','Philips','Lumify','UL-P-101',
+ 90, CURRENT_DATE-140, CURRENT_DATE-50, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='ER-OBS'),'Overdue ~50d'),
+
+-- 2) Mobile X-Ray
+(gen_random_uuid()::text,'seed','Mobile X-Ray','EQ-102','Imaging','Radiology','Shimadzu','MobileDaRt','XR-M-102',
+ 60, CURRENT_DATE-130, CURRENT_DATE-20, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='RAD-M1'),'Overdue ~20d'),
+
+-- 3) OR Cautery (ESU)
+(gen_random_uuid()::text,'seed','Electrosurgical Unit (ESU)','EQ-103','Surgical','OR','Valleylab','Force FX','ESU-103',
+ 180, CURRENT_DATE-300, CURRENT_DATE-60, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='OR-1'),'Overdue ~60d'),
+
+-- 4) Physiotherapy Laser
+(gen_random_uuid()::text,'seed','Physiotherapy Laser','EQ-104','Therapy','Physiotherapy','BTL','BTL-6000','PHY-L-104',
+ 180, CURRENT_DATE-250, CURRENT_DATE-30, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='PHY-THER'),'Overdue ~30d'),
+
+-- 5) Chemistry Analyzer
+(gen_random_uuid()::text,'seed','Chemistry Analyzer','EQ-105','Laboratory','Lab','Beckman Coulter','AU480','CHEM-105',
+ 90, CURRENT_DATE-200, CURRENT_DATE-15, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='LAB-CHEM'),'Overdue ~15d'),
+
+-- 6) Microbiology Incubator
+(gen_random_uuid()::text,'seed','Microbiology Incubator','EQ-106','Laboratory','Lab','Memmert','IN110','MIC-INC-106',
+ 365, CURRENT_DATE-500, CURRENT_DATE-120, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='LAB-MICRO'),'Overdue ~120d'),
+
+-- 7) Suction Apparatus (Ward)
+(gen_random_uuid()::text,'seed','Suction Apparatus','EQ-107','Ward','Ward B','Laerdal','LSU','SUC-107',
+ 90, CURRENT_DATE-160, CURRENT_DATE-10, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='WARD-B07'),'Overdue ~10d'),
+
+-- 8) Defib Trainer (Clinical Training)
+(gen_random_uuid()::text,'seed','Defibrillator Trainer','EQ-108','Training','ER','Laerdal','AED Trainer 3','TR-DEF-108',
+ 180, CURRENT_DATE-220, CURRENT_DATE-40, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='ER-OBS'),'Overdue ~40d'),
+
+-- 9) Infusion Pump (Spare)
+(gen_random_uuid()::text,'seed','Infusion Pump (Spare)','EQ-109','Infusion','Biomedical','B. Braun','Perfusor Space','INF-SP-109',
+ 180, CURRENT_DATE-365, CURRENT_DATE-5, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='BIO-STORE'),'Overdue ~5d'),
+
+-- 10) OR Patient Warmer
+(gen_random_uuid()::text,'seed','Patient Warming System','EQ-110','Surgical','OR','3M','Bair Hugger','BH-110',
+ 180, CURRENT_DATE-400, CURRENT_DATE-90, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='OR-1'),'Overdue ~90d'),
+
+-- 11) Vital Signs Monitor (Ward)
+(gen_random_uuid()::text,'seed','Vital Signs Monitor','EQ-111','Monitoring','Ward B','Mindray','VS-900','VSM-111',
+ 180, CURRENT_DATE-210, CURRENT_DATE-25, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='WARD-B07'),'Overdue ~25d'),
+
+-- 12) ER Capnography
+(gen_random_uuid()::text,'seed','Capnography Monitor','EQ-112','Monitoring','ER','Masimo','EMMA','CAP-112',
+ 90, CURRENT_DATE-150, CURRENT_DATE-12, 'Active',(SELECT id FROM fac),(SELECT id FROM loc WHERE code='ER-OBS'),'Overdue ~12d')
+ON CONFLICT (equipment_id) DO UPDATE SET
+  name=EXCLUDED.name,
+  type=EXCLUDED.type,
+  department=EXCLUDED.department,
+  manufacturer=EXCLUDED.manufacturer,
+  model=EXCLUDED.model,
+  serial_number=EXCLUDED.serial_number,
+  maintenance_freq_days=EXCLUDED.maintenance_freq_days,
+  last_maintenance_date=EXCLUDED.last_maintenance_date,
+  next_due_date=EXCLUDED.next_due_date,
+  status=EXCLUDED.status,
+  facility_id=EXCLUDED.facility_id,
+  location_id=EXCLUDED.location_id,
+  notes=EXCLUDED.notes
+RETURNING 1
+)
+SELECT COUNT(*) AS inserted_or_updated FROM up;
+
+-- (اختياري) تأكيد سريع
+-- SELECT name, equipment_id, last_maintenance_date, next_due_date
+-- FROM equipment WHERE next_due_date < CURRENT_DATE ORDER BY next_due_date ASC;
+-- ===== END =====
