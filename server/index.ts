@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import cron from "node-cron";
 import { generateMaintenanceAlerts } from "./alertService";
+import { updateScheduleStatuses } from "./scheduleService";
 
 const app = express();
 
@@ -51,25 +52,35 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Setup daily maintenance alert generation scheduler
+  // Setup daily maintenance alert generation and schedule status update scheduler
   // Runs every day at midnight (Kuwait timezone: Asia/Kuwait UTC+3)
   cron.schedule('0 0 * * *', async () => {
     try {
+      // Generate equipment maintenance alerts
       log('[SCHEDULER] Starting daily maintenance alert generation...');
-      const result = await generateMaintenanceAlerts();
-      log(`[SCHEDULER] Alert generation complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`);
+      const alertResult = await generateMaintenanceAlerts();
+      log(`[SCHEDULER] Alert generation complete: ${alertResult.created} created, ${alertResult.updated} updated, ${alertResult.skipped} skipped${alertResult.errors.length > 0 ? `, ${alertResult.errors.length} errors` : ''}`);
       
-      if (result.errors.length > 0) {
-        console.error('[SCHEDULER] Alert generation errors:', result.errors);
+      if (alertResult.errors.length > 0) {
+        console.error('[SCHEDULER] Alert generation errors:', alertResult.errors);
+      }
+      
+      // Update maintenance schedule statuses
+      log('[SCHEDULER] Starting schedule status updates...');
+      const scheduleResult = await updateScheduleStatuses();
+      log(`[SCHEDULER] Schedule update complete: ${scheduleResult.updated} updated, ${scheduleResult.alertsCreated} alerts created, ${scheduleResult.skipped} skipped${scheduleResult.errors.length > 0 ? `, ${scheduleResult.errors.length} errors` : ''}`);
+      
+      if (scheduleResult.errors.length > 0) {
+        console.error('[SCHEDULER] Schedule update errors:', scheduleResult.errors);
       }
     } catch (error) {
-      console.error('[SCHEDULER] Daily alert generation failed:', error);
+      console.error('[SCHEDULER] Daily scheduler failed:', error);
     }
   }, {
     timezone: "Asia/Kuwait" // Run in Kuwait timezone
   });
 
-  log('[SCHEDULER] Daily maintenance alert scheduler initialized (runs at midnight Kuwait time)');
+  log('[SCHEDULER] Daily maintenance scheduler initialized (alerts & schedule updates at midnight Kuwait time)');
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
