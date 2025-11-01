@@ -1,0 +1,234 @@
+ممتاز جدًا يا حمزة 👏
+الآن بنتكلم عن تحسين **عرض تفاصيل الأجهزة (Equipment Details)** داخل تطبيق إدارة الصيانة — بحيث تكون الصفحة أكثر وضوحًا واحترافية، وتُظهر المعلومات التقنية، حالة الجهاز، والمواعيد القادمة بشكل بصري وجذاب ✨
+
+خلّني أقدملك تصميم وتحسين شامل من جانب **الـ Frontend + الـ UX + البيانات** 👇
+
+---
+
+## 🎨 **1. واجهة عرض الجهاز (Equipment Details Page) — التصميم الجديد**
+
+### 🎯 الهدف:
+
+عرض كل المعلومات المهمة في **واجهة واحدة نظيفة ومنظمة**:
+
+* الحالة الحالية (Good / Needs Maintenance / Not Working)
+* معلومات المصنع والموقع
+* سجل آخر صيانة وتاريخ الموعد القادم
+* التنبيهات الحالية (Alerts)
+* المهام المفتوحة (Maintenance Tasks)
+* بطاقة الصيانة النشطة (Active Maintenance Record)
+
+---
+
+## 🧱 **2. هيكل البيانات (Data Layout)**
+
+### ✅ الشكل المقترح للـ JSON الذي ترسله الـ API:
+
+```json
+{
+  "id": "eq-001",
+  "name": "Ventilator V900",
+  "status": "Needs Maintenance",
+  "manufacturer": "GE Healthcare",
+  "model": "V900",
+  "serial_number": "VN-34562",
+  "facility": {
+    "name": "AASU Main Hospital",
+    "location": "Building 5 - ICU"
+  },
+  "last_maintenance_date": "2025-06-01",
+  "next_due_date": "2025-12-01",
+  "maintenance_records": [
+    {
+      "id": "mr-101",
+      "type": "Preventive",
+      "status": "In Progress",
+      "technician": "Ali",
+      "created_at": "2025-06-01"
+    }
+  ],
+  "alerts": [
+    {
+      "severity": "Warning",
+      "title": "Scheduled Maintenance Due",
+      "message": "Device requires preventive check soon"
+    }
+  ]
+}
+```
+
+---
+
+## 💻 **3. واجهة React محسّنة (Frontend)**
+
+### 📂 الملف: `EquipmentDetails.jsx`
+
+استخدم مكونات **Shadcn/UI** و **TailwindCSS** لعرض أنيق:
+
+```jsx
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { AlertTriangle, Wrench, CheckCircle, XCircle } from "lucide-react";
+
+export default function EquipmentDetails({ equipment }) {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "Good": return "bg-green-100 text-green-700";
+      case "Needs Maintenance": return "bg-yellow-100 text-yellow-700";
+      case "Not Working": return "bg-red-100 text-red-700";
+      default: return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  return (
+    <div className="grid gap-4 p-4 md:grid-cols-2">
+      {/* 🧾 Basic Information */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-xl font-semibold">{equipment.name}</h2>
+          <Badge className={getStatusColor(equipment.status)}>{equipment.status}</Badge>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p><strong>Manufacturer:</strong> {equipment.manufacturer}</p>
+          <p><strong>Model:</strong> {equipment.model}</p>
+          <p><strong>Serial Number:</strong> {equipment.serial_number}</p>
+          <p><strong>Facility:</strong> {equipment.facility?.name}</p>
+          <p><strong>Location:</strong> {equipment.facility?.location}</p>
+        </CardContent>
+      </Card>
+
+      {/* 📆 Maintenance Overview */}
+      <Card>
+        <CardHeader>
+          <h3 className="font-semibold flex items-center gap-2">
+            <Wrench size={18}/> Maintenance Schedule
+          </h3>
+        </CardHeader>
+        <CardContent>
+          <p><strong>Last Maintenance:</strong> {equipment.last_maintenance_date}</p>
+          <p><strong>Next Due:</strong> {equipment.next_due_date}</p>
+          <Progress value={75} className="mt-2" />
+          <p className="text-xs text-gray-500 mt-1">
+            Progress toward next maintenance cycle
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* ⚠️ Active Alerts */}
+      <Card className="md:col-span-2">
+        <CardHeader>
+          <h3 className="font-semibold flex items-center gap-2">
+            <AlertTriangle size={18}/> Active Alerts
+          </h3>
+        </CardHeader>
+        <CardContent>
+          {equipment.alerts?.length ? (
+            equipment.alerts.map((a, i) => (
+              <div key={i} className="p-2 border-l-4 mb-2 rounded-md bg-yellow-50 border-yellow-500">
+                <p className="font-medium">{a.title}</p>
+                <p className="text-sm text-gray-600">{a.message}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-gray-500 text-sm">No active alerts.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 🧰 Maintenance Records */}
+      <Card className="md:col-span-2">
+        <CardHeader>
+          <h3 className="font-semibold flex items-center gap-2">
+            <CheckCircle size={18}/> Maintenance Records
+          </h3>
+        </CardHeader>
+        <CardContent>
+          {equipment.maintenance_records?.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-gray-600">
+                  <th className="py-2 text-left">Type</th>
+                  <th>Status</th>
+                  <th>Technician</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {equipment.maintenance_records.map((r) => (
+                  <tr key={r.id} className="border-b hover:bg-gray-50">
+                    <td className="py-1">{r.type}</td>
+                    <td>{r.status}</td>
+                    <td>{r.technician}</td>
+                    <td>{r.created_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-gray-500 text-sm">No maintenance records yet.</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+---
+
+## 🧭 **4. تحسين تجربة المستخدم (UX Improvements)**
+
+| العنصر          | التحسين                                                         |
+| --------------- | --------------------------------------------------------------- |
+| الحالة (Status) | تظهر كلون واضح (أخضر/أصفر/أحمر) + Badge واضح                    |
+| الجدول الزمني   | شريط تقدم (Progress Bar) يوضح قرب الصيانة القادمة               |
+| التنبيهات       | صناديق ملونة لكل تنبيه (تحذير/حرج)                              |
+| سجلات الصيانة   | جدول مفصل وسهل التصفح                                           |
+| الوصول السريع   | زر “View Full Maintenance Record” أسفل الصفحة لفتح السجل الكامل |
+
+---
+
+## ⚙️ **5. API Endpoint المقابل**
+
+```js
+// GET /api/equipment/:id/details
+app.get('/api/equipment/:id/details', authorize, async (req, res) => {
+  const { id } = req.params;
+  const { rows } = await db.query(`
+    SELECT e.*, f.name AS facility_name, f.location,
+      json_agg(DISTINCT a.*) AS alerts,
+      json_agg(DISTINCT mr.*) AS maintenance_records
+    FROM equipment e
+    LEFT JOIN facilities f ON f.id = e.facility_id
+    LEFT JOIN alerts a ON a.equipment_id = e.id AND a.status = 'Open'
+    LEFT JOIN maintenance_records mr ON mr.equipment_id = e.id
+    WHERE e.id = $1
+    GROUP BY e.id, f.name, f.location
+  `, [id]);
+  res.json(rows[0]);
+});
+```
+
+---
+
+## ✨ **6. النتيجة النهائية**
+
+📱 واجهة احترافية تجمع كل بيانات الجهاز بوضوح:
+
+* حالة الجهاز واضحة بالألوان
+* تفاصيل المصنع والموقع
+* آخر وأقرب صيانة
+* تنبيهات حالية (warnings/critical)
+* جدول بسجلات الصيانة السابقة
+
+---
+
+هل ترغب أن أضيف معها:
+
+* 🔄 **زر تحديث مباشر (Refresh Data)** في الواجهة
+* 📸 **عرض صور الجهاز (upload/view)**
+* 📊 **مخطط زمني (timeline)** لعمليات الصيانة السابقة
+
+أقدر أجهز لك نسخة موسّعة من الصفحة فيها هذه الميزات الإضافية أيضًا.
+هل ترغب أن أجهزها؟
