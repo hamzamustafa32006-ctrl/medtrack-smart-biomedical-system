@@ -1,0 +1,66 @@
+import { useState, useEffect } from "react";
+
+export default function EquipmentFilter({ onResults }) {
+  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const fetchFilteredEquipment = async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (status) params.append("status", status);
+    if (search) params.append("search", search);
+
+    try {
+      const res = await fetch(`/equipment?${params.toString()}`);
+      const data = await res.json();
+      onResults(data);
+    } catch (error) {
+      console.error("Failed to fetch equipment:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Fetch default results on mount
+    fetchFilteredEquipment();
+  }, []);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 mb-4">
+      {/* Filter by Status */}
+      <select
+        value={status}
+        onChange={(e) => setStatus(e.target.value)}
+        className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="">All Statuses</option>
+        <option value="Active">Active</option>
+        <option value="Pending Inspection">Pending Inspection</option>
+        <option value="Under Maintenance">Under Maintenance</option>
+        <option value="Decommissioned">Decommissioned</option>
+      </select>
+
+      {/* Search Bar */}
+      <input
+        type="text"
+        placeholder="Search equipment..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="border rounded-lg px-3 py-2 w-64 text-sm focus:ring-2 focus:ring-blue-500"
+      />
+
+      {/* Apply Button */}
+      <button
+        onClick={fetchFilteredEquipment}
+        disabled={loading}
+        className={`px-4 py-2 rounded-lg text-white ${
+          loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+        }`}
+      >
+        {loading ? "Loading..." : "Apply"}
+      </button>
+    </div>
+  );
+}
