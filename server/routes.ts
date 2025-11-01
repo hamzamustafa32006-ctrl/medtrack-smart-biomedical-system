@@ -569,6 +569,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get equipment dashboard summary (maintenance status counts by color)
+  app.get("/api/equipment/dashboard-summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { db } = await import("./db");
+      const { equipment } = await import("@shared/schema");
+      const { eq, sql } = await import("drizzle-orm");
+      
+      const [summary] = await db
+        .select({
+          total: sql<number>`COUNT(*)::int`,
+          critical: sql<number>`COUNT(*) FILTER (WHERE ${equipment.statusColor} = 'red')::int`,
+          warning: sql<number>`COUNT(*) FILTER (WHERE ${equipment.statusColor} = 'orange')::int`,
+          ok: sql<number>`COUNT(*) FILTER (WHERE ${equipment.statusColor} = 'green')::int`,
+          overdue: sql<number>`COUNT(*) FILTER (WHERE ${equipment.isOverdue} = true)::int`,
+          urgent: sql<number>`COUNT(*) FILTER (WHERE ${equipment.priority} = 'Urgent')::int`,
+        })
+        .from(equipment)
+        .where(eq(equipment.userId, userId));
+      
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching equipment dashboard summary:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard summary" });
+    }
+  });
+
   // Get alert by ID
   app.get("/api/alerts/:id", isAuthenticated, async (req: any, res) => {
     try {

@@ -204,6 +204,14 @@ export const equipment = pgTable("equipment", {
   usageHours: integer("usage_hours").default(0), // Track equipment usage hours
   department: varchar("department", { length: 255 }), // Department/unit (e.g., ICU, Radiology, Surgery)
   
+  // Analytics fields for maintenance tracking
+  priority: varchar("priority", { length: 50 }).default("Normal"), // Normal, Urgent
+  riskScore: integer("risk_score").default(0), // Risk assessment score 0-100
+  statusColor: varchar("status_color", { length: 20 }).default("green"), // green, orange, red
+  lastCheck: timestamp("last_check").defaultNow(), // Last status check timestamp
+  daysOverdue: integer("days_overdue"), // Number of days past due date
+  isOverdue: boolean("is_overdue"), // Boolean flag for overdue status
+  
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

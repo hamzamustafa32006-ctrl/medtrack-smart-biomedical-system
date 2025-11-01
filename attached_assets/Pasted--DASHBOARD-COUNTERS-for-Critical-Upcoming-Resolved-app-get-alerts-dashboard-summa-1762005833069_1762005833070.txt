@@ -1,0 +1,67 @@
+/* === DASHBOARD COUNTERS for Critical / Upcoming / Resolved === */
+app.get('/alerts/dashboard-summary', async (req, res) => {
+  try {
+    const row = await db.one(`
+      SELECT
+        COUNT(*) FILTER (WHERE status_color='red')    AS critical,
+        COUNT(*) FILTER (WHERE status_color='orange') AS upcoming,
+        COUNT(*) FILTER (WHERE status_color='green')  AS resolved,
+        COUNT(*) FILTER (WHERE is_overdue)            AS overdue
+      FROM equipment;
+    `);
+    res.json(row);
+  } catch (e) {
+    console.error('dashboard-summary error', e);
+    res.status(500).json({ error: 'dashboard_summary_failed' });
+  }
+});
+
+/* === Widget script that auto-inserts live numbers === */
+app.get('/alerts/dashboard-summary-widget.js', async (req, res) => {
+  res.type('application/javascript');
+  try {
+    const row = await db.one(`
+      SELECT
+        COUNT(*) FILTER (WHERE status_color='red')    AS critical,
+        COUNT(*) FILTER (WHERE status_color='orange') AS upcoming,
+        COUNT(*) FILTER (WHERE status_color='green')  AS resolved,
+        COUNT(*) FILTER (WHERE is_overdue)            AS overdue
+      FROM equipment;
+    `);
+    res.send(`
+      (function(){
+        const data = ${JSON.stringify(row)};
+        const map = {
+          'critical-count': data.critical,
+          'upcoming-count': data.upcoming,
+          'resolved-count': data.resolved,
+          'overdue-count': data.overdue
+        };
+        for (const id in map){
+          let el = document.getElementById(id);
+          if(el) el.textContent = map[id];
+        }
+      })();
+    `);
+  } catch (e) {
+    console.error('dashboard-summary-widget error', e);
+    res.send(`console.error('dashboard-summary-widget failed');`);
+  }
+});
+
+/* === Auto-inject script into any HTML page === */
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+  res.send = (body) => {
+    try {
+      if (typeof body === 'string' && body.includes('</body>') && (res.get('Content-Type') || '').includes('text/html')) {
+        const tag = '<script src="/alerts/dashboard-summary-widget.js"></script>';
+        if (!body.includes('/alerts/dashboard-summary-widget.js')) {
+          body = body.replace('</body>', tag + '\n</body>');
+        }
+      }
+    } catch(_) {}
+    return originalSend(body);
+  };
+  next();
+});
