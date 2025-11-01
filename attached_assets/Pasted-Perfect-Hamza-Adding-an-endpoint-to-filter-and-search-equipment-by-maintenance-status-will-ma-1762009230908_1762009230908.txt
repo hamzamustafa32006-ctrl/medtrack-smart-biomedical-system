@@ -1,0 +1,221 @@
+Perfect, Hamza ✅
+Adding an endpoint to **filter and search equipment by maintenance status** will make your **Maintenance Alert App** much more user-friendly — especially for your real-time dashboard, analytics, and the upcoming calendar view.
+
+Let’s design this step-by-step (ready for **Node.js + PostgreSQL**) 👇
+
+---
+
+## 🧭 1. Goal
+
+Enable users to:
+
+* Filter equipment by **maintenance status** (Active, Under Maintenance, Overdue, Pending Inspection, etc.)
+* Search by **name, model, serial number, or facility**
+* Combine both in one request
+
+Example:
+
+```
+GET /equipment?status=Under%20Maintenance&search=ventilator
+```
+
+---
+
+## 🧱 2. Database Prerequisites
+
+Your `equipment` table should already contain:
+
+```sql
+name TEXT,
+manufacturer TEXT,
+model TEXT,
+serial_number TEXT,
+facility_id UUID,
+status TEXT CHECK (status IN ('Active','Pending Inspection','Under Maintenance','Decommissioned'))
+```
+
+✅ Make sure to index searchable fields for faster lookups:
+
+```sql
+CREATE INDEX idx_equipment_status ON equipment(status);
+CREATE INDEX idx_equipment_textsearch ON equipment USING gin (to_tsvector('english', name || ' ' || model || ' ' || serial_number));
+```
+
+---
+
+## ⚙️ 3. Backend Endpoint (Node.js + Express Example)
+
+### ✅ **Route:**
+
+```js
+// GET /equipment?status=&search=
+app.get('/equipment', async (req, res) => {
+  const { status, search } = req.query;
+
+  let baseQuery = `
+    SELECT e.*, f.name AS facility_name
+    FROM equipment e
+    LEFT JOIN facilities f ON f.id = e.facility_id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  // Filter by maintenance status
+  if (status) {
+    params.push(status);
+    baseQuery += ` AND e.status = $${params.length}`;
+  }
+
+  // Text search by name/model/serial
+  if (search) {
+    params.push(`%${search.toLowerCase()}%`);
+    baseQuery += ` AND (LOWER(e.name) LIKE $${params.length}
+                     OR LOWER(e.model) LIKE $${params.length}
+                     OR LOWER(e.serial_number) LIKE $${params.length}
+                     OR LOWER(f.name) LIKE $${params.length})`;
+  }
+
+  baseQuery += ' ORDER BY e.name ASC';
+
+  try {
+    const { rows } = await db.query(baseQuery, params);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching equipment:', error);
+    res.status(500).json({ error: 'Failed to retrieve equipment.' });
+  }
+});
+```
+
+✅ Supports multiple filters
+✅ Prevents SQL injection
+✅ Works even if filters are not provided
+
+---
+
+## 🧩 4. Example Requests
+
+| Action            | Example URL                                        | Description                             |
+| ----------------- | -------------------------------------------------- | --------------------------------------- |
+| Get all equipment | `/equipment`                                       | No filters applied                      |
+| Filter by status  | `/equipment?status=Active`                         | Shows only active equipment             |
+| Search by name    | `/equipment?search=ventilator`                     | Finds all ventilators                   |
+| Combine both      | `/equipment?status=Under%20Maintenance&search=icu` | Shows ICU ventilators under maintenance |
+
+---
+
+## 📊 5. Example Response
+
+```json
+[
+  {
+    "id": "eq-101",
+    "name": "Ventilator V900",
+    "manufacturer": "GE Healthcare",
+    "model": "V900",
+    "serial_number": "VN-34562",
+    "facility_name": "AASU Hospital",
+    "status": "Under Maintenance",
+    "next_due_date": "2025-11-05"
+  },
+  {
+    "id": "eq-102",
+    "name": "Ventilator V850",
+    "manufacturer": "Philips",
+    "model": "V850",
+    "serial_number": "VN-84511",
+    "facility_name": "AASU Hospital",
+    "status": "Under Maintenance",
+    "next_due_date": "2025-11-08"
+  }
+]
+```
+
+---
+
+## 🧠 6. Advanced Filtering (Optional Enhancements)
+
+You can add more filters easily by extending the endpoint:
+
+| Filter      | Example Param           | SQL                         |
+| ----------- | ----------------------- | --------------------------- |
+| Facility    | `?facility=UUID`        | `AND e.facility_id = $x`    |
+| Criticality | `?criticality=High`     | `AND e.criticality = $x`    |
+| Due Range   | `?dueBefore=2025-12-01` | `AND e.next_due_date <= $x` |
+
+Example:
+
+```
+/equipment?status=Active&facility=3b4d...&dueBefore=2025-12-01
+```
+
+---
+
+## 🧩 7. Pagination (Optional for Performance)
+
+Add `limit` and `offset` parameters:
+
+```js
+const limit = parseInt(req.query.limit) || 20;
+const offset = parseInt(req.query.offset) || 0;
+baseQuery += ` LIMIT ${limit} OFFSET ${offset}`;
+```
+
+---
+
+## 🖥️ 8. Frontend Integration Example
+
+### React Fetch Hook
+
+```js
+const fetchEquipment = async (status, search) => {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (search) params.append('search', search);
+  
+  const res = await fetch(`/equipment?${params.toString()}`);
+  return res.json();
+};
+```
+
+### Search & Filter UI
+
+```tsx
+<div className="flex gap-3 items-center">
+  <Select onChange={setStatus}>
+    <option value="">All Statuses</option>
+    <option value="Active">Active</option>
+    <option value="Pending Inspection">Pending Inspection</option>
+    <option value="Under Maintenance">Under Maintenance</option>
+  </Select>
+
+  <input
+    type="text"
+    placeholder="Search equipment..."
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    className="border p-2 rounded-lg w-64"
+  />
+
+  <Button onClick={() => fetchEquipment(status, search)}>Apply</Button>
+</div>
+```
+
+✅ Fully interactive filtering and search
+✅ Integrates smoothly with your analytics dashboard or schedule calendar
+
+---
+
+## ✅ 9. Acceptance Criteria
+
+* [x] Supports `status` filter and free-text `search`
+* [x] Returns combined filtered dataset
+* [x] Works with pagination and sorting
+* [x] Prevents SQL injection (parameterized queries)
+* [x] Integrated with frontend dashboard search bar
+
+---
+
+Would you like me to extend this endpoint to also **filter by maintenance schedule (next_due_date / overdue)** — for example,
+`GET /equipment?status=Active&dueBefore=2025-11-15` —
+so your real-time analytics dashboard can show **“Upcoming maintenance within 7 days”** directly from the API?
