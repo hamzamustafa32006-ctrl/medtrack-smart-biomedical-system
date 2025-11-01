@@ -11,6 +11,7 @@ import {
   insertLocationSchema,
   insertVendorSchema,
   insertMaintenanceTaskSchema,
+  insertMaintenanceScheduleSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -605,6 +606,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching analytics summary:", error);
       res.status(500).json({ message: "Failed to fetch analytics summary" });
+    }
+  });
+
+  // ============================================
+  // Maintenance Schedule routes
+  // ============================================
+
+  app.get("/api/maintenance-schedules", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { status, equipmentId } = req.query;
+      
+      const schedules = await storage.getMaintenanceSchedulesWithDetails(
+        userId,
+        { status: status as string, equipmentId: equipmentId as string }
+      );
+      
+      res.json(schedules);
+    } catch (error) {
+      console.error("Error fetching maintenance schedules:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance schedules" });
+    }
+  });
+
+  app.get("/api/maintenance-schedules/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      
+      const schedule = await storage.getMaintenanceScheduleById(id, userId);
+      if (!schedule) {
+        return res.status(404).json({ message: "Maintenance schedule not found" });
+      }
+      
+      res.json(schedule);
+    } catch (error) {
+      console.error("Error fetching maintenance schedule:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance schedule" });
+    }
+  });
+
+  app.post("/api/maintenance-schedules", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = insertMaintenanceScheduleSchema.parse(req.body);
+      
+      const schedule = await storage.createMaintenanceSchedule(data, userId);
+      res.status(201).json(schedule);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("Error creating maintenance schedule:", error);
+      res.status(500).json({ message: "Failed to create maintenance schedule" });
+    }
+  });
+
+  app.patch("/api/maintenance-schedules/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const data = insertMaintenanceScheduleSchema.partial().parse(req.body);
+      
+      const schedule = await storage.updateMaintenanceSchedule(id, data, userId);
+      if (!schedule) {
+        return res.status(404).json({ message: "Maintenance schedule not found" });
+      }
+      
+      res.json(schedule);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("Error updating maintenance schedule:", error);
+      res.status(500).json({ message: "Failed to update maintenance schedule" });
+    }
+  });
+
+  app.post("/api/maintenance-schedules/:id/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const { notes } = req.body;
+      
+      const schedule = await storage.completeMaintenanceSchedule(id, userId, notes);
+      if (!schedule) {
+        return res.status(404).json({ message: "Maintenance schedule not found" });
+      }
+      
+      res.json(schedule);
+    } catch (error) {
+      console.error("Error completing maintenance schedule:", error);
+      res.status(500).json({ message: "Failed to complete maintenance schedule" });
+    }
+  });
+
+  app.post("/api/maintenance-schedules/:id/assign", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const { assignedTo } = req.body;
+      
+      if (!assignedTo) {
+        return res.status(400).json({ message: "assignedTo is required" });
+      }
+      
+      const schedule = await storage.assignMaintenanceSchedule(id, assignedTo, userId);
+      if (!schedule) {
+        return res.status(404).json({ message: "Maintenance schedule not found" });
+      }
+      
+      res.json(schedule);
+    } catch (error) {
+      console.error("Error assigning maintenance schedule:", error);
+      res.status(500).json({ message: "Failed to assign maintenance schedule" });
     }
   });
 

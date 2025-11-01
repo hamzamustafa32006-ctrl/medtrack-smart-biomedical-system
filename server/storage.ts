@@ -1490,7 +1490,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(maintenanceSchedules.id, id))
       .returning();
     
-    // Also update the equipment's last maintenance date
+    // Also update the equipment's last maintenance date (with user scoping)
     await db
       .update(equipment)
       .set({
@@ -1498,7 +1498,10 @@ export class DatabaseStorage implements IStorage {
         nextDueDate: nextDueDate,
         updatedAt: new Date(),
       })
-      .where(eq(equipment.id, existing.equipmentId));
+      .where(and(
+        eq(equipment.id, existing.equipmentId),
+        eq(equipment.userId, userId)
+      ));
     
     return updated;
   }
