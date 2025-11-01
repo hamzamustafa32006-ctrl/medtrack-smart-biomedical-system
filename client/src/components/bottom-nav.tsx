@@ -2,10 +2,10 @@ import { Link, useLocation } from "wouter";
 import { Home, ClipboardList, CheckSquare, AlertTriangle } from "lucide-react";
 
 const navItems = [
-  { path: "/", icon: Home, label: "Dashboard", testId: "nav-dashboard" },
-  { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "nav-equipment" },
-  { path: "/tasks", icon: CheckSquare, label: "Tasks", testId: "nav-tasks" },
-  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "nav-alerts" },
+  { path: "/", icon: Home, label: "Dashboard", testId: "link-dashboard-mobile" },
+  { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "link-equipment-mobile" },
+  { path: "/tasks", icon: CheckSquare, label: "Maintenance", testId: "link-maintenance-mobile" },
+  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "link-alerts-mobile" },
 ];
 
 export function BottomNav() {

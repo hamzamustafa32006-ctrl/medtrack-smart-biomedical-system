@@ -17,19 +17,19 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal } from "lucide-react";
 
 const mainNavItems = [
-  { path: "/", icon: Home, label: "Dashboard", testId: "nav-dashboard" },
-  { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "nav-equipment" },
-  { path: "/tasks", icon: CheckSquare, label: "Maintenance", testId: "nav-maintenance" },
+  { path: "/", icon: Home, label: "Dashboard", testId: "link-dashboard-main" },
+  { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "link-equipment-main" },
+  { path: "/tasks", icon: CheckSquare, label: "Maintenance", testId: "link-maintenance-main" },
 ];
 
 const secondaryNavItems = [
-  { path: "/facilities", icon: Building2, label: "Facilities", testId: "nav-facilities" },
-  { path: "/history", icon: History, label: "Reports", testId: "nav-reports" },
-  { path: "/settings", icon: Settings, label: "Settings", testId: "nav-settings" },
+  { path: "/facilities", icon: Building2, label: "Facilities", testId: "link-facilities-more" },
+  { path: "/history", icon: History, label: "Reports", testId: "link-reports-more" },
+  { path: "/settings", icon: Settings, label: "Settings", testId: "link-settings-more" },
 ];
 
 const userNavItems = [
-  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "nav-alerts" },
+  { path: "/alerts", icon: AlertTriangle, label: "Alerts", testId: "link-alerts-user" },
 ];
 
 export function AppSidebar() {

@@ -38,6 +38,32 @@ Preferred communication style: Simple, everyday language.
 - Custom app components: AppSidebar, BottomNav, TopBar, AlertCenter
 - Conditional rendering based on screen size (mobile vs. desktop navigation)
 
+**Navigation System** (`client/src/components/app-sidebar.tsx`, `client/src/components/bottom-nav.tsx`)
+- **Simplified 3-tier navigation structure** for reduced cognitive load:
+  1. **Main Navigation** (Always visible, 3 core items):
+     - Dashboard (/) - Home page with overview and alerts
+     - Equipment (/equipment) - Equipment management and tracking
+     - Maintenance (/tasks) - Maintenance tasks and schedules
+  2. **More Section** (Collapsible dropdown with secondary pages):
+     - Facilities (/facilities) - Facility and location management
+     - Reports (/history) - Maintenance history and audit logs
+     - Settings (/settings) - User preferences and configuration
+  3. **User Area** (Bottom of sidebar, user-focused features):
+     - Alerts (/alerts) - Alert center with active notifications
+- **Desktop Navigation** (`AppSidebar`):
+  - Fixed sidebar with brand header ("MedTrack" with bell icon)
+  - Main navigation items always visible for quick access
+  - Collapsible "More" section using Radix UI Collapsible primitive with ChevronDown indicator (rotates 180° when expanded)
+  - User area anchored to bottom with border separator
+  - Active state highlighting via SidebarMenuButton `isActive` prop
+  - Uses hover-elevate and active-elevate-2 utility classes for interactions
+- **Mobile Navigation** (`BottomNav`):
+  - Fixed bottom navigation bar (4 items for thumb-reachable access)
+  - Core items: Dashboard, Equipment, Tasks, Alerts
+  - Active state indicated by text-primary color vs text-muted-foreground
+  - Hidden on desktop (md:hidden breakpoint)
+- **Design rationale**: Reduced from flat 7-item list to organized sections for better UX, clearer information hierarchy, and faster navigation to frequently-used features
+
 **Equipment Management Page** (`client/src/pages/equipment.tsx`)
 - **Enhanced Data Tracking**: Additional fields for biomedical equipment management
   - imageUrl: Equipment photos or uploaded images
