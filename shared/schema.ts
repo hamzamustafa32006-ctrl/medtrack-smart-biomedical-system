@@ -243,6 +243,7 @@ export const equipmentRelations = relations(equipment, ({ one, many }) => ({
   maintenanceRecords: many(maintenanceRecords),
   maintenancePlans: many(maintenancePlans),
   maintenanceTasks: many(maintenanceTasks),
+  maintenanceSchedules: many(maintenanceSchedules),
 }));
 
 export const insertEquipmentSchema = createInsertSchema(equipment).omit({

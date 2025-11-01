@@ -9,6 +9,7 @@ import {
   vendors,
   maintenancePlans,
   maintenanceTasks,
+  maintenanceSchedules,
   alerts,
   notificationLogs,
   auditLogs,
@@ -30,6 +31,8 @@ import {
   type InsertMaintenancePlan,
   type MaintenanceTask,
   type InsertMaintenanceTask,
+  type MaintenanceSchedule,
+  type InsertMaintenanceSchedule,
   type Alert,
   type InsertAlert,
   type NotificationLog,
@@ -121,6 +124,15 @@ export interface IStorage {
   // Audit log operations
   getAuditLogs(requestingUserId: string, filters?: { userId?: string; entityType?: string; entityId?: string }): Promise<AuditLog[]>;
   createAuditLog(data: InsertAuditLog): Promise<AuditLog>;
+  
+  // Maintenance schedule operations
+  getMaintenanceSchedules(userId: string, filters?: { status?: string; equipmentId?: string }): Promise<MaintenanceSchedule[]>;
+  getMaintenanceSchedulesWithDetails(userId: string, filters?: { status?: string; equipmentId?: string }): Promise<any[]>;
+  getMaintenanceScheduleById(id: string, userId: string): Promise<MaintenanceSchedule | undefined>;
+  createMaintenanceSchedule(data: InsertMaintenanceSchedule, userId: string): Promise<MaintenanceSchedule>;
+  updateMaintenanceSchedule(id: string, data: Partial<InsertMaintenanceSchedule>, userId: string): Promise<MaintenanceSchedule | undefined>;
+  completeMaintenanceSchedule(id: string, userId: string, completionNotes?: string): Promise<MaintenanceSchedule | undefined>;
+  assignMaintenanceSchedule(id: string, assignedTo: string, userId: string): Promise<MaintenanceSchedule | undefined>;
   
   // Analytics operations
   getAnalyticsSummary(userId: string): Promise<{
@@ -1362,6 +1374,149 @@ export class DatabaseStorage implements IStorage {
       .values(data)
       .returning();
     return log;
+  }
+
+  // ============================================
+  // Maintenance schedule operations
+  // ============================================
+
+  async getMaintenanceSchedules(
+    userId: string,
+    filters?: { status?: string; equipmentId?: string }
+  ): Promise<MaintenanceSchedule[]> {
+    const conditions = [eq(maintenanceSchedules.userId, userId)];
+    
+    if (filters?.status) {
+      conditions.push(eq(maintenanceSchedules.status, filters.status));
+    }
+    if (filters?.equipmentId) {
+      conditions.push(eq(maintenanceSchedules.equipmentId, filters.equipmentId));
+    }
+    
+    return await db
+      .select()
+      .from(maintenanceSchedules)
+      .where(and(...conditions))
+      .orderBy(maintenanceSchedules.nextDueDate);
+  }
+
+  async getMaintenanceSchedulesWithDetails(
+    userId: string,
+    filters?: { status?: string; equipmentId?: string }
+  ): Promise<any[]> {
+    const conditions = [eq(maintenanceSchedules.userId, userId)];
+    
+    if (filters?.status) {
+      conditions.push(eq(maintenanceSchedules.status, filters.status));
+    }
+    if (filters?.equipmentId) {
+      conditions.push(eq(maintenanceSchedules.equipmentId, filters.equipmentId));
+    }
+    
+    return await db
+      .select({
+        schedule: maintenanceSchedules,
+        equipment: equipment,
+      })
+      .from(maintenanceSchedules)
+      .leftJoin(equipment, eq(maintenanceSchedules.equipmentId, equipment.id))
+      .where(and(...conditions))
+      .orderBy(maintenanceSchedules.nextDueDate);
+  }
+
+  async getMaintenanceScheduleById(
+    id: string,
+    userId: string
+  ): Promise<MaintenanceSchedule | undefined> {
+    const [schedule] = await db
+      .select()
+      .from(maintenanceSchedules)
+      .where(and(
+        eq(maintenanceSchedules.id, id),
+        eq(maintenanceSchedules.userId, userId)
+      ));
+    return schedule;
+  }
+
+  async createMaintenanceSchedule(
+    data: InsertMaintenanceSchedule,
+    userId: string
+  ): Promise<MaintenanceSchedule> {
+    const [schedule] = await db
+      .insert(maintenanceSchedules)
+      .values({ ...data, userId })
+      .returning();
+    return schedule;
+  }
+
+  async updateMaintenanceSchedule(
+    id: string,
+    data: Partial<InsertMaintenanceSchedule>,
+    userId: string
+  ): Promise<MaintenanceSchedule | undefined> {
+    const existing = await this.getMaintenanceScheduleById(id, userId);
+    if (!existing) return undefined;
+    
+    const [updated] = await db
+      .update(maintenanceSchedules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(maintenanceSchedules.id, id))
+      .returning();
+    return updated;
+  }
+
+  async completeMaintenanceSchedule(
+    id: string,
+    userId: string,
+    completionNotes?: string
+  ): Promise<MaintenanceSchedule | undefined> {
+    const existing = await this.getMaintenanceScheduleById(id, userId);
+    if (!existing) return undefined;
+    
+    const today = new Date();
+    const nextDueDate = new Date(today);
+    nextDueDate.setDate(nextDueDate.getDate() + existing.frequencyDays);
+    
+    // Update schedule: mark as completed and generate next cycle
+    const [updated] = await db
+      .update(maintenanceSchedules)
+      .set({
+        lastMaintenanceDate: today,
+        nextDueDate: nextDueDate,
+        status: "Scheduled",
+        notes: completionNotes || existing.notes,
+        updatedAt: new Date(),
+      })
+      .where(eq(maintenanceSchedules.id, id))
+      .returning();
+    
+    // Also update the equipment's last maintenance date
+    await db
+      .update(equipment)
+      .set({
+        lastMaintenanceDate: today,
+        nextDueDate: nextDueDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(equipment.id, existing.equipmentId));
+    
+    return updated;
+  }
+
+  async assignMaintenanceSchedule(
+    id: string,
+    assignedTo: string,
+    userId: string
+  ): Promise<MaintenanceSchedule | undefined> {
+    const existing = await this.getMaintenanceScheduleById(id, userId);
+    if (!existing) return undefined;
+    
+    const [updated] = await db
+      .update(maintenanceSchedules)
+      .set({ assignedTo, updatedAt: new Date() })
+      .where(eq(maintenanceSchedules.id, id))
+      .returning();
+    return updated;
   }
 
   // ============================================
