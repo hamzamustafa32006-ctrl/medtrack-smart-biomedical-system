@@ -743,6 +743,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Real-time widget with live updates via SSE
+  app.get("/widgets/analytics-live.js", (req: any, res) => {
+    res.type("application/javascript");
+    res.send(`
+(function(){
+  function setText(id, val){
+    var el = document.getElementById(id);
+    if (el) el.textContent = (val !== undefined && val !== null) ? val : 0;
+  }
+
+  function render(d){
+    setText('critical-count', d.critical);
+    setText('upcoming-count', d.upcoming);
+    setText('resolved-count', d.resolved_this_week);
+    setText('overdue-count', d.overdue);
+    setText('total-count', d.total);
+    setText('due7d-count', d.due_next_7d);
+  }
+
+  function ensureBox(id, label, border){
+    var el = document.getElementById(id);
+    if(!el){
+      var wrap = document.getElementById('alert-counters');
+      if(!wrap){
+        wrap = document.createElement('div');
+        wrap.id = 'alert-counters';
+        wrap.style.display='flex';
+        wrap.style.gap='12px';
+        wrap.style.margin='8px 0 16px';
+        wrap.style.flexWrap='wrap';
+        (document.querySelector('[data-dashboard-header]') || document.body).prepend(wrap);
+      }
+      var box = document.createElement('div');
+      box.style.padding='8px 12px';
+      box.style.border='1px solid ' + (border||'#e5e7eb');
+      box.style.borderRadius='8px';
+      box.style.fontFamily='system-ui, sans-serif';
+      var name = document.createElement('div');
+      name.style.fontSize='12px';
+      name.style.opacity='0.75';
+      name.textContent = label;
+      var val = document.createElement('div');
+      val.id = id;
+      val.style.fontSize='20px';
+      val.style.fontWeight='600';
+      box.appendChild(name);
+      box.appendChild(val);
+      wrap.appendChild(box);
+    }
+  }
+
+  // Auto-create counter boxes
+  ensureBox('critical-count', 'Critical', '#fca5a5');
+  ensureBox('upcoming-count', 'Upcoming', '#fdba74');
+  ensureBox('resolved-count', 'Resolved (7d)', '#86efac');
+  ensureBox('overdue-count', 'Overdue', '#fecaca');
+  ensureBox('total-count', 'Total', '#cbd5e1');
+  ensureBox('due7d-count', 'Due Next 7d', '#fde68a');
+
+  // Use EventSource for real-time updates, fallback to polling
+  if ('EventSource' in window){
+    var es = new EventSource('/api/analytics/stream');
+    es.addEventListener('analytics', function(ev){
+      try { 
+        render(JSON.parse(ev.data)); 
+      } catch(e){
+        console.error('Failed to parse analytics data:', e);
+      }
+    });
+    es.addEventListener('error', function(){
+      console.error('Analytics stream connection error');
+    });
+    es.onerror = function(){
+      // Silently handle connection issues
+    };
+  } else {
+    // Fallback: poll the REST API every 5 seconds
+    function pollAnalytics(){
+      fetch('/api/analytics/summary')
+        .then(r => r.json())
+        .then(render)
+        .catch(err => console.error('Analytics fetch failed:', err));
+    }
+    pollAnalytics();
+    setInterval(pollAnalytics, 5000);
+  }
+})();
+    `);
+  });
+
   // Get alert by ID
   app.get("/api/alerts/:id", isAuthenticated, async (req: any, res) => {
     try {
