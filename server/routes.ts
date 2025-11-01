@@ -176,6 +176,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get equipment filtered by maintenance status with search, pagination, and sorting
+  app.get("/api/equipment/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { db } = await import("./db");
+      const { equipment } = await import("@shared/schema");
+      const { eq, and, or, ilike, lt, gte, sql } = await import("drizzle-orm");
+      
+      const status = (req.query.status as string || 'overdue').toLowerCase();
+      const q = (req.query.q as string || '').trim();
+      const limit = Math.min(parseInt(req.query.limit as string || '25', 10), 100);
+      const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
+      const sortField = req.query.sort as string || 'nextDueDate';
+      const dir = (req.query.dir as string || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+      
+      const allowedSortFields = new Set(['name', 'nextDueDate', 'daysOverdue', 'statusColor', 'equipmentId', 'serial']);
+      const sort = allowedSortFields.has(sortField) ? sortField : 'nextDueDate';
+      
+      const conditions = [eq(equipment.userId, userId)];
+      
+      if (status === 'overdue') {
+        conditions.push(eq(equipment.isOverdue, true));
+      } else if (status === 'upcoming') {
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+        conditions.push(
+          and(
+            eq(equipment.isOverdue, false),
+            lt(equipment.nextDueDate, sevenDaysFromNow)
+          )!
+        );
+      } else if (status === 'resolved') {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        conditions.push(
+          gte(equipment.lastMaintenanceDate, sevenDaysAgo)
+        );
+      } else if (status === 'critical') {
+        conditions.push(eq(equipment.statusColor, 'red'));
+      }
+      
+      if (q) {
+        conditions.push(
+          or(
+            ilike(equipment.name, `%${q}%`),
+            ilike(equipment.equipmentId, `%${q}%`),
+            ilike(equipment.serial, `%${q}%`),
+            ilike(equipment.manufacturer, `%${q}%`),
+            ilike(equipment.model, `%${q}%`)
+          )!
+        );
+      }
+      
+      const whereClause = and(...conditions);
+      
+      const orderByColumn = equipment[sort as keyof typeof equipment] || equipment.nextDueDate;
+      const orderBy = dir === 'desc' 
+        ? sql`${orderByColumn} DESC NULLS LAST`
+        : sql`${orderByColumn} ASC NULLS LAST`;
+      
+      const [items, countResult] = await Promise.all([
+        db
+          .select()
+          .from(equipment)
+          .where(whereClause)
+          .orderBy(orderBy)
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(equipment)
+          .where(whereClause)
+      ]);
+      
+      const total = countResult[0]?.count || 0;
+      
+      res.json({ total, items });
+    } catch (error) {
+      console.error("Error fetching filtered equipment:", error);
+      res.status(500).json({ message: "Failed to fetch equipment status" });
+    }
+  });
+
   // ============================================
   // Contract routes
   // ============================================

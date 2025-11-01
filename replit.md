@@ -31,6 +31,14 @@ Preferred communication style: Simple, everyday language.
   - `/widgets/analytics-live.js`: Real-time JavaScript widget using EventSource for live updates every 5 seconds
   
   All endpoints use the storage abstraction layer with efficient SQL aggregation using FILTER clauses. The SSE implementation includes connection management, automatic cleanup on disconnect, and graceful fallback to polling for browsers without EventSource support.
+- **Status-Filtered Equipment Endpoint**: Advanced filtering endpoint (`/api/equipment/status`) for equipment maintenance views with five status categories:
+  - `overdue`: Equipment past due for maintenance (using `isOverdue` flag)
+  - `upcoming`: Equipment due within 7 days (not overdue, but approaching)
+  - `resolved`: Equipment serviced in the last 7 days (based on `lastMaintenanceDate`)
+  - `critical`: Equipment with red status color (high priority)
+  - `all`: All equipment (no status filter)
+  
+  Features full-text search across name, equipment ID, serial, manufacturer, and model fields. Supports pagination (limit/offset), multi-field sorting (name, nextDueDate, daysOverdue, statusColor, equipmentId, serial), and configurable sort direction (asc/desc). Returns paginated results with total count for efficient UI rendering.
 
 ### Data Storage
 - **Database Technology**: PostgreSQL via Neon serverless database, WebSocket connection pooling.

@@ -1,0 +1,77 @@
+/* ===== Maintenance Alerts: status-filtered endpoint (non-breaking) ===== */
+/*
+  Usage examples:
+    /api/alerts?status=overdue
+    /api/alerts?status=upcoming
+    /api/alerts?status=resolved
+    /api/alerts?status=critical
+    /api/alerts?status=all&q=ventilator&limit=20&offset=0&sort=next_due_date&dir=asc
+*/
+
+import db from './db.js'; // adjust path if needed
+
+// normalize sort allowlist
+const SORT_ALLOW = new Set(['name','next_due_date','days_overdue','status_color','equipment_id']);
+
+app.get('/api/alerts', async (req, res) => {
+  const status = (req.query.status || 'overdue').toLowerCase();   // default: overdue
+  const q      = (req.query.q || '').trim();
+  const limit  = Math.min(parseInt(req.query.limit || '25', 10), 100);
+  const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
+  const sort   = SORT_ALLOW.has((req.query.sort || '').toLowerCase())
+                  ? req.query.sort.toLowerCase()
+                  : 'next_due_date';
+  const dir    = (req.query.dir || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+
+  // WHERE logic driven by your schema
+  // overdue   = is_overdue
+  // upcoming  = not overdue and due within 7 days
+  // resolved  = maintenance done within last 7 days (using last_maintenance_date)
+  // critical  = status_color = 'red'
+  // all       = no extra filter
+  const rows = await db.any(`
+    WITH base AS (
+      SELECT
+        id, equipment_id, name, manufacturer, model,
+        status_color, is_overdue,
+        COALESCE(days_overdue, GREATEST((CURRENT_DATE - next_due_date)::int, 0)) AS days_overdue,
+        next_due_date, last_maintenance_date,
+        facility_id, location_id, type, department, notes
+      FROM equipment
+    )
+    SELECT
+      *,
+      COUNT(*) OVER () AS _total
+    FROM base
+    WHERE
+      CASE
+        WHEN $1 = 'overdue'  THEN is_overdue
+        WHEN $1 = 'upcoming' THEN (NOT is_overdue) AND next_due_date < CURRENT_DATE + INTERVAL '7 days'
+        WHEN $1 = 'resolved' THEN COALESCE(last_maintenance_date, DATE '1900-01-01') >= CURRENT_DATE - INTERVAL '7 days'
+        WHEN $1 = 'critical' THEN status_color = 'red'
+        WHEN $1 = 'all'      THEN TRUE
+        ELSE is_overdue
+      END
+      AND (
+        $2 = '' OR
+        name ILIKE '%'||$2||'%' OR
+        equipment_id ILIKE '%'||$2||'%' OR
+        manufacturer ILIKE '%'||$2||'%' OR
+        model ILIKE '%'||$2||'%'
+      )
+    ORDER BY
+      CASE WHEN $3 = 'name'          THEN name END ${dir},
+      CASE WHEN $3 = 'next_due_date' THEN next_due_date END ${dir},
+      CASE WHEN $3 = 'days_overdue'  THEN days_overdue END ${dir},
+      CASE WHEN $3 = 'status_color'  THEN status_color END ${dir},
+      CASE WHEN $3 = 'equipment_id'  THEN equipment_id END ${dir},
+      next_due_date ${dir}  -- tie-breaker
+    LIMIT $4 OFFSET $5
+  `, [status, q, sort, limit, offset]);
+
+  const total = rows[0]? Number(rows[0]._total) : 0;
+  res.json({ total, items: rows.map(r => {
+    const { _total, ...rest } = r; return rest;
+  })});
+});
+/* ===== End status-filtered endpoint ===== */
