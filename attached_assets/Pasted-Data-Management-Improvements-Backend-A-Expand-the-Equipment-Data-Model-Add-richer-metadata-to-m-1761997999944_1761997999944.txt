@@ -1,0 +1,159 @@
+Data Management Improvements (Backend)
+✅ A. Expand the Equipment Data Model
+Add richer metadata to make equipment tracking more meaningful.
+ALTER TABLE equipment
+ADD COLUMN manufacturer TEXT,
+ADD COLUMN model TEXT,
+ADD COLUMN serial_number TEXT,
+ADD COLUMN department TEXT,
+ADD COLUMN vendor_name TEXT,
+ADD COLUMN purchase_date DATE,
+ADD COLUMN warranty_expiry DATE,
+ADD COLUMN maintenance_frequency_days INT,
+ADD COLUMN calibration_required BOOLEAN DEFAULT FALSE,
+ADD COLUMN image_url TEXT;  -- For uploaded photo or QR scan
+💡 These fields let you track ownership, maintenance patterns, and device history per department.
+✅ B. Add Equipment Status Automation
+Automatically update status based on alerts or maintenance tasks.
+UPDATE equipment
+SET status = CASE
+  WHEN id IN (SELECT equipment_id FROM maintenance_alerts WHERE severity='Critical' AND status='Open') THEN 'Under Maintenance'
+  WHEN id IN (SELECT equipment_id FROM maintenance_alerts WHERE severity='Warning' AND status='Open') THEN 'Scheduled'
+  ELSE 'Active'
+END;
+💡 This way, the dashboard always shows real-time operational status.
+✅ C. Introduce Equipment Audit Trail
+Track every change (useful for hospital compliance or biomedical audits).
+CREATE TABLE equipment_audit (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id),
+  user_id UUID REFERENCES users(id),
+  action TEXT,
+  old_data JSONB,
+  new_data JSONB,
+  timestamp TIMESTAMP DEFAULT NOW()
+);
+Every time a record is updated, insert a diff entry here.
+✅ D. Optimize Queries
+Add indexes for faster filtering:
+CREATE INDEX idx_equipment_facility ON equipment(facility_id);
+CREATE INDEX idx_equipment_status ON equipment(status);
+CREATE INDEX idx_equipment_next_due ON equipment(next_due_date);
+🖥️ 2. User Interface Improvements (Frontend)
+You can make your Equipment Page look more like a modern CMMS dashboard — clear, color-coded, and filterable.
+✅ A. Use a Card + Table Hybrid Layout
+Desktop (table view):
+Image	Name	Type	Facility	Location	Status	Next Maintenance	Criticality
+🏥	Ventilator V900	Life Support	AASU Hospital	ICU Room 3	🔴 Overdue	Nov 3, 2025	High
+⚙️	X-Ray XR210	Diagnostic	Radiology	Room B12	🟢 Active	Dec 12, 2025	Medium
+Mobile (card view):
+<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+  {equipment.map(e => (
+    <div key={e.id} className="p-4 border rounded-2xl shadow hover:shadow-lg">
+      <img src={e.image_url || '/placeholder.png'} alt={e.name} className="rounded-lg h-24 w-full object-cover" />
+      <h4 className="font-semibold mt-2">{e.name}</h4>
+      <p className="text-sm text-gray-500">{e.facility_name}</p>
+      <StatusBadge status={e.status} />
+      <p className="text-xs mt-1 text-gray-400">Next: {formatDate(e.next_due_date)}</p>
+    </div>
+  ))}
+</div>
+💡 Use a toggle between “Table View” and “Card View” for responsive design.
+✅ B. Advanced Filtering & Grouping
+Add top-level filters:
+<Filters
+  facilities={facilities}
+  status={['Active','Under Maintenance','Decommissioned']}
+  types={equipmentTypes}
+  criticality={['High','Medium','Low']}
+  onFilterChange={handleFilter}
+/>
+Features:
+🔍 Search by name, type, serial number
+🏥 Filter by facility or department
+⚙️ Group by equipment type or status
+✅ C. Equipment Detail Drawer (Slide Panel)
+When a user clicks an item → open a drawer (instead of a new page):
+Sections:
+Equipment Overview (image, name, type, status)
+Facility / Location info
+Manufacturer / Vendor info
+Maintenance History
+Attached files (manuals, calibration certs)
+QR Code for mobile access
+<Drawer open={open} onClose={close}>
+  <img src={equipment.image_url} alt="" className="rounded-lg w-full h-48 object-cover" />
+  <h2 className="text-lg font-semibold mt-3">{equipment.name}</h2>
+  <StatusBadge status={equipment.status} />
+  <p className="text-gray-500">{equipment.type}</p>
+
+  <Divider />
+  <p><b>Manufacturer:</b> {equipment.manufacturer}</p>
+  <p><b>Model:</b> {equipment.model}</p>
+  <p><b>Serial Number:</b> {equipment.serial_number}</p>
+  <p><b>Facility:</b> {equipment.facility_name}</p>
+  <p><b>Next Maintenance:</b> {formatDate(equipment.next_due_date)}</p>
+
+  <Divider />
+  <QRCode value={`https://app/equipment/${equipment.id}`} />
+</Drawer>
+✅ D. Add Inline Edit & Quick Actions
+Allow technicians to update minor details directly from the list:
+Edit status
+Upload photo
+Mark as “Under Maintenance”
+💡 Example:
+<TableCell>
+  <DropdownMenu>
+    <DropdownItem onClick={() => updateStatus(e.id, 'Under Maintenance')}>Mark Under Maintenance</DropdownItem>
+    <DropdownItem onClick={() => openEditModal(e)}>Edit Details</DropdownItem>
+  </DropdownMenu>
+</TableCell>
+📊 3. User Experience & Visualization Enhancements
+✅ A. Summary Widgets (Dashboard Cards)
+At the top of the Equipment Page:
+Widget	Description
+🧰 Total Equipment	Total count
+⚠️ Overdue	Devices past due date
+🏥 Facilities	Active facilities
+🔧 Under Maintenance	Currently serviced
+🧑‍🔧 Technicians	Active engineers
+<SummaryCard title="Total Equipment" value={total} />
+<SummaryCard title="Overdue" value={overdue} color="red" />
+✅ B. Charts
+Visualize maintenance workload:
+Bar chart: Equipment by facility
+Pie chart: Equipment status distribution
+Line chart: Monthly maintenance completed
+Example (using recharts):
+<PieChart width={400} height={300}>
+  <Pie data={statusData} dataKey="value" nameKey="status" label />
+  <Tooltip />
+</PieChart>
+✅ C. Smart Search
+Implement fuzzy search (Fuse.js or SQL ILIKE):
+“venti” → finds Ventilator V900
+“icu” → shows all equipment in ICU
+✅ D. Performance Optimizations
+Use lazy loading / pagination for large tables
+Cache filters using localStorage
+Optimize API calls with React Query
+✅ E. QR & Barcode Integration
+Each equipment entry has a QR code linked to its profile.
+Technicians can scan → open on mobile for quick status updates.
+🧩 4. Implementation Plan (Step-by-Step)
+Step	Feature	Description
+1️⃣	Database expansion	Add manufacturer/model/vendor fields
+2️⃣	API updates	/equipment returns full metadata
+3️⃣	Table + Card view	Responsive UI with color-coded status
+4️⃣	Equipment drawer	Detailed slide-out panel
+5️⃣	Filters & search	Facility / type / status filters
+6️⃣	Dashboard widgets	Counts, pie chart, KPIs
+7️⃣	QR code integration	Quick access for technicians
+✅ 5. Acceptance Criteria
+ Equipment has full metadata (type, facility, vendor, warranty)
+ View modes: table & card
+ Filters and search fully functional
+ Equipment drawer displays all details
+ Dashboard metrics accurate and real-time
+ API supports pagination and filtering
