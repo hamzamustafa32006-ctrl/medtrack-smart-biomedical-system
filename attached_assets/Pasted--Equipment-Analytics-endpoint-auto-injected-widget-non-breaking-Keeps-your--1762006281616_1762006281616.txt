@@ -1,0 +1,158 @@
+/* ===== Equipment Analytics: endpoint + auto-injected widget (non-breaking) ===== */
+/* Keeps your existing /api/equipment/dashboard-summary intact */
+
+import db from './db.js'; // adjust path if needed
+
+// 1) New analytics endpoint (read-only)
+app.get('/api/analytics/summary', async (req, res) => {
+  try {
+    const row = await db.one(`
+      WITH base AS (
+        SELECT
+          status_color,
+          is_overdue,
+          last_maintenance_date,
+          next_due_date
+        FROM equipment
+      )
+      SELECT
+        COUNT(*)                                                   AS total,
+        COUNT(*) FILTER (WHERE is_overdue)                         AS overdue,
+        COUNT(*) FILTER (WHERE status_color = 'red')               AS critical,
+        COUNT(*) FILTER (WHERE status_color = 'orange')            AS upcoming,
+        COUNT(*) FILTER (WHERE status_color = 'green')             AS healthy,
+        COUNT(*) FILTER (
+          WHERE COALESCE(last_maintenance_date, DATE '1900-01-01')
+                >= CURRENT_DATE - INTERVAL '7 days'
+        ) AS resolved_this_week,
+        COUNT(*) FILTER (
+          WHERE next_due_date >= CURRENT_DATE
+            AND next_due_date <  CURRENT_DATE + INTERVAL '7 days'
+        ) AS due_next_7d
+    `);
+    res.json(row);
+  } catch (e) {
+    console.error('GET /api/analytics/summary error', e);
+    res.status(500).json({ error: 'analytics_failed' });
+  }
+});
+
+// 2) Widget that populates counters in the DOM (id-based), or creates a tiny bar if missing
+app.get('/widgets/analytics-summary.js', async (req, res) => {
+  res.type('application/javascript');
+  try {
+    const row = await db.one(`
+      WITH base AS (
+        SELECT status_color, is_overdue, last_maintenance_date, next_due_date
+        FROM equipment
+      )
+      SELECT
+        COUNT(*)                                                   AS total,
+        COUNT(*) FILTER (WHERE is_overdue)                         AS overdue,
+        COUNT(*) FILTER (WHERE status_color = 'red')               AS critical,
+        COUNT(*) FILTER (WHERE status_color = 'orange')            AS upcoming,
+        COUNT(*) FILTER (WHERE status_color = 'green')             AS healthy,
+        COUNT(*) FILTER (
+          WHERE COALESCE(last_maintenance_date, DATE '1900-01-01')
+                >= CURRENT_DATE - INTERVAL '7 days'
+        ) AS resolved_this_week,
+        COUNT(*) FILTER (
+          WHERE next_due_date >= CURRENT_DATE
+            AND next_due_date <  CURRENT_DATE + INTERVAL '7 days'
+        ) AS due_next_7d
+    `);
+
+    res.send(`
+      (function(){
+        const data = ${JSON.stringify(row)};
+
+        function ensureBox(id, label, border){
+          var el = document.getElementById(id);
+          if(!el){
+            var wrap = document.getElementById('alert-counters');
+            if(!wrap){
+              wrap = document.createElement('div');
+              wrap.id = 'alert-counters';
+              wrap.style.display='flex';
+              wrap.style.gap='12px';
+              wrap.style.margin='8px 0 16px';
+              wrap.style.flexWrap='wrap';
+              (document.querySelector('[data-dashboard-header]') || document.body).prepend(wrap);
+            }
+            var box = document.createElement('div');
+            box.style.padding='8px 12px';
+            box.style.border='1px solid ' + (border||'#e5e7eb');
+            box.style.borderRadius='8px';
+            box.style.fontFamily='system-ui, sans-serif';
+            var name = document.createElement('div');
+            name.style.fontSize='12px';
+            name.style.opacity='0.75';
+            name.textContent = label;
+            var val = document.createElement('div');
+            val.id = id;
+            val.style.fontSize='20px';
+            val.style.fontWeight='600';
+            box.appendChild(name);
+            box.appendChild(val);
+            wrap.appendChild(box);
+            el = val;
+          }
+          return el;
+        }
+
+        // Map IDs if you already have them in your HTML; otherwise we auto-create.
+        (function set(id, label, value, color){
+          var b = ensureBox(id, label, color);
+          b.textContent = value;
+        })('critical-count', 'Critical', data.critical, '#fca5a5');
+
+        (function set(id, label, value, color){
+          var b = ensureBox(id, label, color);
+          b.textContent = value;
+        })('upcoming-count', 'Upcoming', data.upcoming, '#fdba74');
+
+        (function set(id, label, value, color){
+          var b = ensureBox(id, label, color);
+          b.textContent = value;
+        })('resolved-count', 'Resolved (7d)', data.resolved_this_week, '#86efac');
+
+        (function set(id, label, value, color){
+          var b = ensureBox(id, label, color);
+          b.textContent = value;
+        })('overdue-count', 'Overdue', data.overdue, '#fecaca');
+
+        (function set(id, label, value, color){
+          var b = ensureBox(id, label, color);
+          b.textContent = value;
+        })('total-count', 'Total', data.total, '#cbd5e1');
+
+        (function set(id, label, value, color){
+          var b = ensureBox(id, label, color);
+          b.textContent = value;
+        })('due7d-count', 'Due Next 7d', data.due_next_7d, '#fde68a');
+      })();
+    `);
+  } catch (e) {
+    console.error('GET /widgets/analytics-summary.js error', e);
+    res.send(`console.error('analytics summary widget failed');`);
+  }
+});
+
+// 3) Auto-inject the widget <script> into any HTML response (no front-end edits required)
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+  res.send = (body) => {
+    try {
+      const ct = (res.get('Content-Type') || '').toLowerCase();
+      if (typeof body === 'string' && body.includes('</body>') && ct.includes('text/html')) {
+        const tag = '<script src="/widgets/analytics-summary.js"></script>';
+        if (!body.includes('/widgets/analytics-summary.js')) {
+          body = body.replace('</body>', tag + '\\n</body>');
+        }
+      }
+    } catch (_) {}
+    return originalSend(body);
+  };
+  next();
+});
+/* ===== End patch ===== */

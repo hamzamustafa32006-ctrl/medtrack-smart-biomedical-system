@@ -121,6 +121,17 @@ export interface IStorage {
   // Audit log operations
   getAuditLogs(requestingUserId: string, filters?: { userId?: string; entityType?: string; entityId?: string }): Promise<AuditLog[]>;
   createAuditLog(data: InsertAuditLog): Promise<AuditLog>;
+  
+  // Analytics operations
+  getAnalyticsSummary(userId: string): Promise<{
+    total: number;
+    overdue: number;
+    critical: number;
+    upcoming: number;
+    healthy: number;
+    resolved_this_week: number;
+    due_next_7d: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1351,6 +1362,42 @@ export class DatabaseStorage implements IStorage {
       .values(data)
       .returning();
     return log;
+  }
+
+  // ============================================
+  // Analytics operations
+  // ============================================
+
+  async getAnalyticsSummary(userId: string): Promise<{
+    total: number;
+    overdue: number;
+    critical: number;
+    upcoming: number;
+    healthy: number;
+    resolved_this_week: number;
+    due_next_7d: number;
+  }> {
+    const { sql } = await import("drizzle-orm");
+    
+    const [summary] = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        overdue: sql<number>`COUNT(*) FILTER (WHERE ${equipment.isOverdue} = true)::int`,
+        critical: sql<number>`COUNT(*) FILTER (WHERE ${equipment.statusColor} = 'red')::int`,
+        upcoming: sql<number>`COUNT(*) FILTER (WHERE ${equipment.statusColor} = 'orange')::int`,
+        healthy: sql<number>`COUNT(*) FILTER (WHERE ${equipment.statusColor} = 'green')::int`,
+        resolved_this_week: sql<number>`COUNT(*) FILTER (
+          WHERE COALESCE(${equipment.lastMaintenanceDate}, DATE '1900-01-01') >= CURRENT_DATE - INTERVAL '7 days'
+        )::int`,
+        due_next_7d: sql<number>`COUNT(*) FILTER (
+          WHERE ${equipment.nextDueDate} >= CURRENT_DATE 
+            AND ${equipment.nextDueDate} < CURRENT_DATE + INTERVAL '7 days'
+        )::int`,
+      })
+      .from(equipment)
+      .where(eq(equipment.userId, userId));
+    
+    return summary;
   }
 }
 

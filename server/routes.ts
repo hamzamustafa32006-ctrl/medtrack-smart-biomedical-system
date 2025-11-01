@@ -596,6 +596,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Enhanced analytics endpoint with additional metrics
+  app.get("/api/analytics/summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const summary = await storage.getAnalyticsSummary(userId);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching analytics summary:", error);
+      res.status(500).json({ message: "Failed to fetch analytics summary" });
+    }
+  });
+
+  // Widget script that auto-creates analytics dashboard counters
+  app.get("/widgets/analytics-summary.js", isAuthenticated, async (req: any, res) => {
+    res.type("application/javascript");
+    try {
+      const userId = req.user.claims.sub;
+      const summary = await storage.getAnalyticsSummary(userId);
+
+      // Ensure all values default to 0 if undefined
+      const safeData = {
+        total: summary.total || 0,
+        overdue: summary.overdue || 0,
+        critical: summary.critical || 0,
+        upcoming: summary.upcoming || 0,
+        healthy: summary.healthy || 0,
+        resolved_this_week: summary.resolved_this_week || 0,
+        due_next_7d: summary.due_next_7d || 0,
+      };
+
+      res.send(`
+(function(){
+  const data = ${JSON.stringify(safeData)};
+
+  function ensureBox(id, label, border){
+    var el = document.getElementById(id);
+    if(!el){
+      var wrap = document.getElementById('alert-counters');
+      if(!wrap){
+        wrap = document.createElement('div');
+        wrap.id = 'alert-counters';
+        wrap.style.display='flex';
+        wrap.style.gap='12px';
+        wrap.style.margin='8px 0 16px';
+        wrap.style.flexWrap='wrap';
+        (document.querySelector('[data-dashboard-header]') || document.body).prepend(wrap);
+      }
+      var box = document.createElement('div');
+      box.style.padding='8px 12px';
+      box.style.border='1px solid ' + (border||'#e5e7eb');
+      box.style.borderRadius='8px';
+      box.style.fontFamily='system-ui, sans-serif';
+      var name = document.createElement('div');
+      name.style.fontSize='12px';
+      name.style.opacity='0.75';
+      name.textContent = label;
+      var val = document.createElement('div');
+      val.id = id;
+      val.style.fontSize='20px';
+      val.style.fontWeight='600';
+      box.appendChild(name);
+      box.appendChild(val);
+      wrap.appendChild(box);
+      el = val;
+    }
+    return el;
+  }
+
+  function set(id, label, value, color){
+    try {
+      var b = ensureBox(id, label, color);
+      b.textContent = (value !== undefined && value !== null) ? value : 0;
+    } catch (err) {
+      console.error('Failed to set counter:', id, err);
+    }
+  }
+
+  set('critical-count', 'Critical', data.critical, '#fca5a5');
+  set('upcoming-count', 'Upcoming', data.upcoming, '#fdba74');
+  set('resolved-count', 'Resolved (7d)', data.resolved_this_week, '#86efac');
+  set('overdue-count', 'Overdue', data.overdue, '#fecaca');
+  set('total-count', 'Total', data.total, '#cbd5e1');
+  set('due7d-count', 'Due Next 7d', data.due_next_7d, '#fde68a');
+})();
+      `);
+    } catch (error) {
+      console.error("Error generating analytics widget:", error);
+      res.send(`console.error('Analytics summary widget failed. Please check server logs.');`);
+    }
+  });
+
   // Get alert by ID
   app.get("/api/alerts/:id", isAuthenticated, async (req: any, res) => {
     try {

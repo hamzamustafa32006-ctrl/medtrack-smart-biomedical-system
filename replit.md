@@ -21,11 +21,13 @@ Preferred communication style: Simple, everyday language.
 - **Authentication & Authorization**: Replit Auth (OIDC) integrated with Passport.js, session storage in PostgreSQL, user-scoped data access enforced.
 - **Data Access Layer**: Storage abstraction with `IStorage` interface, `DatabaseStorage` class, Drizzle ORM for type-safe queries, all queries filtered by `userId`.
 - **Automated Alert Generation**: Daily `node-cron` scheduler (Asia/Kuwait timezone) scans equipment for upcoming `nextDueDate`. Implements a three-tier alert severity (Info, Warning, Critical) with automatic escalation. Uses a production-grade UPSERT pattern with `UNIQUE` constraints to prevent duplicate active alerts and ensure atomic updates, tracking `created`, `updated`, and `skipped` metrics.
+- **Analytics Endpoints**: Three dashboard analytics endpoints serve real-time equipment metrics: `/api/equipment/dashboard-summary` (basic status counts), `/api/analytics/summary` (extended metrics including 7-day resolution and upcoming due dates), and `/widgets/analytics-summary.js` (JavaScript widget that auto-injects dashboard counters into HTML pages). All use efficient SQL aggregation with FILTER clauses for performance.
 
 ### Data Storage
 - **Database Technology**: PostgreSQL via Neon serverless database, WebSocket connection pooling.
-- **Database Schema**: Managed by Drizzle ORM. Key tables include `sessions`, `users`, `facilities`, `locations`, `equipment` (with flexible free-text or foreign key facility/location, enhanced biomedical fields), `contracts`, `maintenanceRecords`, `maintenancePlans`, `maintenanceTasks`, `alerts` (multi-level, escalation, multi-channel delivery), `notificationLogs`, `auditLogs`.
+- **Database Schema**: Managed by Drizzle ORM. Key tables include `sessions`, `users`, `facilities`, `locations`, `equipment` (with flexible free-text or foreign key facility/location, enhanced biomedical fields, and analytics tracking columns: `priority`, `riskScore`, `statusColor`, `lastCheck`, `daysOverdue`, `isOverdue`), `contracts`, `maintenanceRecords`, `maintenancePlans`, `maintenanceTasks`, `alerts` (multi-level, escalation, multi-channel delivery), `notificationLogs`, `auditLogs`.
 - **Schema Validation**: Drizzle-Zod for Zod schema generation, runtime validation on API endpoints.
+- **Analytics Tracking**: Equipment table includes real-time analytics columns for dashboard visualization: color-coded status (`statusColor`: red/orange/green based on maintenance overdue days), priority flags, risk scores (0-100), and overdue tracking metrics.
 
 ## External Dependencies
 
