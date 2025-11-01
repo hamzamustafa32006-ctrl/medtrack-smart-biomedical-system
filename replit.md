@@ -13,6 +13,12 @@ Preferred communication style: Simple, everyday language.
 - **UI Design System**: shadcn/ui built on Radix UI, custom professional minimalist design with Primary Blue (#0057B7) and Accent Orange (#FF6D00), Tailwind CSS, Inter/Roboto fonts, responsive mobile-first design with dedicated bottom navigation.
 - **State Management**: TanStack Query for server state, React Hook Form with Zod for form validation, Context API for authentication.
 - **Navigation System**: Simplified 3-tier structure (Main, More, User Area) for reduced cognitive load. Desktop uses a fixed sidebar (`AppSidebar`), while mobile uses a fixed bottom navigation bar (`BottomNav`), both with active state highlighting. Main navigation includes Home, Analytics, Equipment, and Maintenance pages.
+- **Maintenance Records Page** (`/maintenance`): Comprehensive maintenance record management system with professional CMMS features:
+  - **Advanced Filtering**: Search across equipment names, technicians, descriptions; filter by status (In Progress, Completed, Pending Verification) and maintenance type (Preventive, Corrective, Calibration, Inspection, Emergency)
+  - **Interactive Table**: Displays equipment name, type badges (color-coded), dates, technician, status, cost (KWD) with sortable columns
+  - **Add Maintenance Dialog**: Full-featured form for creating new maintenance records with equipment selection, type, dates, description, actions taken, parts used, cost tracking, and notes
+  - **Details Sheet**: Slide-out drawer showing complete maintenance record details including equipment info, maintenance specifics, actions, parts, and verification status
+  - **Integration**: Seamlessly integrates with Equipment page History tab for equipment-specific maintenance records view
 - **Equipment Management Page**: Features free-text facility and location entry for flexibility, enhanced data tracking (e.g., `imageUrl`, `calibrationRequired`, `usageHours`, `department`), toggleable List (table) and Grid (card) views, Recharts-based data visualizations (Status/Condition distribution), color-coded badge system (Status, Criticality, Condition), search and filter functionalities. Equipment details are shown in a Sheet component with a tabbed interface (Overview, Maintenance & Alerts, Location & Facility, History) including QR code display for equipment ID. CRUD operations use queryClient for cache invalidation.
 - **Analytics Dashboard Page** (`/dashboard`): Real-time equipment analytics with synchronized filtering system. Features include:
   - **Dynamic Filter Panel**: 4 filters (Maintenance Status, Equipment Status, Facility, Search) with 300ms debounced search
@@ -47,10 +53,19 @@ Preferred communication style: Simple, everyday language.
   - `all`: All equipment (no status filter)
   
   Features full-text search across name, equipment ID, serial, manufacturer, and model fields. Supports pagination (limit/offset), multi-field sorting (name, nextDueDate, daysOverdue, statusColor, equipmentId, serial), and configurable sort direction (asc/desc). Returns paginated results with total count for efficient UI rendering.
+- **Maintenance Record Management API**: Professional maintenance tracking endpoints with comprehensive CRUD operations:
+  - `GET /api/maintenance-records`: Retrieve all user's maintenance records (simple list)
+  - `GET /api/maintenance-records/details`: Advanced endpoint with filtering by equipmentId, status, maintenanceType, technicianId; returns records with joined equipment, facility, and technician details
+  - `GET /api/maintenance-records/:id`: Fetch single record by ID with access control
+  - `POST /api/maintenance-records`: Create new maintenance record with automatic equipment status updates ("Under Maintenance" for in-progress records)
+  - `PATCH /api/maintenance-records/:id`: Update existing record with partial data support
+  - `PATCH /api/maintenance-records/:id/complete`: Complete maintenance record with automated workflows: auto-resolve open equipment alerts, update equipment status to "Active", set completion timestamps, calculate next scheduled date based on maintenance frequency, support verification workflow
+  
+  All endpoints enforce user scoping and validate inputs with Zod schemas.
 
 ### Data Storage
 - **Database Technology**: PostgreSQL via Neon serverless database, WebSocket connection pooling.
-- **Database Schema**: Managed by Drizzle ORM. Key tables include `sessions`, `users`, `facilities`, `locations`, `equipment` (with flexible free-text or foreign key facility/location, enhanced biomedical fields, and analytics tracking columns: `priority`, `riskScore`, `statusColor`, `lastCheck`, `daysOverdue`, `isOverdue`), `contracts`, `maintenanceRecords`, `maintenancePlans`, `maintenanceTasks`, `maintenance_schedules` (automated scheduling with status tracking, technician assignment, frequency-based rescheduling), `alerts` (multi-level, escalation, multi-channel delivery), `notificationLogs`, `auditLogs`.
+- **Database Schema**: Managed by Drizzle ORM. Key tables include `sessions`, `users`, `facilities`, `locations`, `equipment` (with flexible free-text or foreign key facility/location, enhanced biomedical fields, and analytics tracking columns: `priority`, `riskScore`, `statusColor`, `lastCheck`, `daysOverdue`, `isOverdue`), `contracts`, `maintenanceRecords` (enhanced with professional fields: `technicianId`, `startDate`, `endDate`, `actionsTaken`, `partsUsed`, `cost`, `status` [In Progress/Completed/Pending Verification], `verificationStatus` [Verified/Rejected/Pending], `verifiedBy`, `verifiedAt`), `maintenancePlans`, `maintenanceTasks`, `maintenance_schedules` (automated scheduling with status tracking, technician assignment, frequency-based rescheduling), `alerts` (multi-level, escalation, multi-channel delivery), `notificationLogs`, `auditLogs`.
 - **Schema Validation**: Drizzle-Zod for Zod schema generation, runtime validation on API endpoints.
 - **Data Integrity**: Unique constraints on (userId, serial) for equipment and (userId, contractNumber) for contracts prevent duplicates while supporting multi-tenancy.
 - **Analytics Tracking**: Equipment table includes real-time analytics columns for dashboard visualization: color-coded status (`statusColor`: red/orange/green based on maintenance overdue days), priority flags, risk scores (0-100), and overdue tracking metrics.

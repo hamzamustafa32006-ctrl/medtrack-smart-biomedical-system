@@ -323,6 +323,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get maintenance records with details and filters
+  app.get("/api/maintenance-records/details", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { equipmentId, status, maintenanceType, technicianId } = req.query;
+      
+      const filters: any = {};
+      if (equipmentId) filters.equipmentId = equipmentId as string;
+      if (status) filters.status = status as string;
+      if (maintenanceType) filters.maintenanceType = maintenanceType as string;
+      if (technicianId) filters.technicianId = technicianId as string;
+
+      const records = await storage.getMaintenanceRecordsWithDetails(userId, filters);
+      res.json(records);
+    } catch (error) {
+      console.error("Error fetching maintenance records with details:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance records" });
+    }
+  });
+
+  // Get single maintenance record by ID
+  app.get("/api/maintenance-records/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const record = await storage.getMaintenanceRecordById(id, userId);
+      
+      if (!record) {
+        return res.status(404).json({ message: "Maintenance record not found" });
+      }
+      
+      res.json(record);
+    } catch (error) {
+      console.error("Error fetching maintenance record:", error);
+      res.status(500).json({ message: "Failed to fetch maintenance record" });
+    }
+  });
+
+  // Update maintenance record
+  app.patch("/api/maintenance-records/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const data = insertMaintenanceRecordSchema.partial().parse(req.body);
+      
+      const record = await storage.updateMaintenanceRecord(id, data, userId);
+      
+      if (!record) {
+        return res.status(404).json({ message: "Maintenance record not found or access denied" });
+      }
+      
+      res.json(record);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating maintenance record:", error);
+      res.status(500).json({ message: "Failed to update maintenance record" });
+    }
+  });
+
+  // Complete maintenance record (auto-resolves alerts, updates equipment)
+  app.patch("/api/maintenance-records/:id/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const { verifiedBy } = req.body;
+      
+      const record = await storage.completeMaintenanceRecord(id, userId, verifiedBy);
+      
+      if (!record) {
+        return res.status(404).json({ message: "Maintenance record not found or access denied" });
+      }
+      
+      res.json(record);
+    } catch (error) {
+      console.error("Error completing maintenance record:", error);
+      res.status(500).json({ message: "Failed to complete maintenance record" });
+    }
+  });
+
   // ============================================
   // Facility routes
   // ============================================

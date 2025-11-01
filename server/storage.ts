@@ -87,7 +87,16 @@ export interface IStorage {
   
   // Maintenance record operations
   getMaintenanceRecords(userId: string): Promise<MaintenanceRecord[]>;
+  getMaintenanceRecordsWithDetails(userId: string, filters?: { 
+    equipmentId?: string; 
+    status?: string; 
+    maintenanceType?: string;
+    technicianId?: string;
+  }): Promise<any[]>;
+  getMaintenanceRecordById(id: string, userId: string): Promise<MaintenanceRecord | undefined>;
   createMaintenanceRecord(data: InsertMaintenanceRecord, userId: string): Promise<MaintenanceRecord>;
+  updateMaintenanceRecord(id: string, data: Partial<InsertMaintenanceRecord>, userId: string): Promise<MaintenanceRecord | undefined>;
+  completeMaintenanceRecord(id: string, userId: string, verifiedBy?: string): Promise<MaintenanceRecord | undefined>;
   
   // Maintenance plan operations
   getMaintenancePlans(userId: string, equipmentId?: string): Promise<MaintenancePlan[]>;
@@ -677,12 +686,28 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Equipment not found or access denied');
     }
     
+    // Set start date if not provided
+    const recordData = {
+      ...data,
+      userId,
+      startDate: data.startDate || new Date(),
+    };
+    
     const [record] = await db
       .insert(maintenanceRecords)
-      .values({ ...data, userId })
+      .values(recordData)
       .returning();
 
-    // Update equipment's last maintenance date if this is the most recent
+    // Update equipment status to "Under Maintenance" if record is in progress
+    if (record.status === 'In Progress') {
+      await this.updateEquipment(
+        record.equipmentId,
+        { status: 'Under Maintenance' },
+        userId
+      );
+    }
+
+    // Update equipment's last maintenance date if completed
     if (record.completed && record.maintenanceDate) {
       const shouldUpdate = !equipment.lastMaintenanceDate || 
         new Date(record.maintenanceDate) > new Date(equipment.lastMaintenanceDate);
@@ -695,6 +720,168 @@ export class DatabaseStorage implements IStorage {
         );
       }
     }
+
+    return record;
+  }
+
+  async getMaintenanceRecordsWithDetails(
+    userId: string,
+    filters?: { 
+      equipmentId?: string; 
+      status?: string; 
+      maintenanceType?: string;
+      technicianId?: string;
+    }
+  ): Promise<any[]> {
+    let query = db
+      .select({
+        id: maintenanceRecords.id,
+        equipmentId: maintenanceRecords.equipmentId,
+        technicianId: maintenanceRecords.technicianId,
+        maintenanceDate: maintenanceRecords.maintenanceDate,
+        startDate: maintenanceRecords.startDate,
+        endDate: maintenanceRecords.endDate,
+        maintenanceType: maintenanceRecords.maintenanceType,
+        description: maintenanceRecords.description,
+        actionsTaken: maintenanceRecords.actionsTaken,
+        partsUsed: maintenanceRecords.partsUsed,
+        performedBy: maintenanceRecords.performedBy,
+        cost: maintenanceRecords.cost,
+        status: maintenanceRecords.status,
+        verificationStatus: maintenanceRecords.verificationStatus,
+        verifiedBy: maintenanceRecords.verifiedBy,
+        verifiedAt: maintenanceRecords.verifiedAt,
+        completed: maintenanceRecords.completed,
+        nextScheduledDate: maintenanceRecords.nextScheduledDate,
+        notes: maintenanceRecords.notes,
+        createdAt: maintenanceRecords.createdAt,
+        updatedAt: maintenanceRecords.updatedAt,
+        equipmentName: equipment.name,
+        equipmentSerial: equipment.serial,
+        equipmentType: equipment.type,
+        facilityName: facilities.name,
+      })
+      .from(maintenanceRecords)
+      .leftJoin(equipment, eq(maintenanceRecords.equipmentId, equipment.id))
+      .leftJoin(facilities, eq(equipment.facilityId, facilities.id))
+      .where(eq(maintenanceRecords.userId, userId))
+      .$dynamic();
+
+    // Apply filters
+    if (filters?.equipmentId) {
+      query = query.where(eq(maintenanceRecords.equipmentId, filters.equipmentId));
+    }
+    if (filters?.status) {
+      query = query.where(eq(maintenanceRecords.status, filters.status));
+    }
+    if (filters?.maintenanceType) {
+      query = query.where(eq(maintenanceRecords.maintenanceType, filters.maintenanceType));
+    }
+    if (filters?.technicianId) {
+      query = query.where(eq(maintenanceRecords.technicianId, filters.technicianId));
+    }
+
+    const records = await query.orderBy(desc(maintenanceRecords.maintenanceDate));
+    return records;
+  }
+
+  async getMaintenanceRecordById(
+    id: string,
+    userId: string
+  ): Promise<MaintenanceRecord | undefined> {
+    const [record] = await db
+      .select()
+      .from(maintenanceRecords)
+      .where(and(eq(maintenanceRecords.id, id), eq(maintenanceRecords.userId, userId)));
+    return record;
+  }
+
+  async updateMaintenanceRecord(
+    id: string,
+    data: Partial<InsertMaintenanceRecord>,
+    userId: string
+  ): Promise<MaintenanceRecord | undefined> {
+    // Verify user owns the record
+    const existing = await this.getMaintenanceRecordById(id, userId);
+    if (!existing) return undefined;
+
+    const [record] = await db
+      .update(maintenanceRecords)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(maintenanceRecords.id, id), eq(maintenanceRecords.userId, userId)))
+      .returning();
+    
+    return record;
+  }
+
+  async completeMaintenanceRecord(
+    id: string,
+    userId: string,
+    verifiedBy?: string
+  ): Promise<MaintenanceRecord | undefined> {
+    // Verify user owns the record
+    const existing = await this.getMaintenanceRecordById(id, userId);
+    if (!existing) return undefined;
+
+    // Get equipment details for auto-rescheduling
+    const equipment = await this.getEquipmentById(existing.equipmentId, userId);
+    if (!equipment) {
+      throw new Error('Equipment not found');
+    }
+
+    const now = new Date();
+    
+    // Calculate next scheduled date based on equipment's maintenance frequency
+    let nextScheduledDate = existing.nextScheduledDate;
+    if (equipment.maintenanceFrequencyDays && !nextScheduledDate) {
+      const daysToAdd = equipment.maintenanceFrequencyDays;
+      nextScheduledDate = new Date(now);
+      nextScheduledDate.setDate(nextScheduledDate.getDate() + daysToAdd);
+    }
+
+    // Update the maintenance record to completed
+    const [record] = await db
+      .update(maintenanceRecords)
+      .set({
+        status: 'Completed',
+        completed: true,
+        endDate: now,
+        verificationStatus: verifiedBy ? 'Verified' : 'Pending',
+        verifiedBy: verifiedBy || null,
+        verifiedAt: verifiedBy ? now : null,
+        nextScheduledDate,
+        updatedAt: now,
+      })
+      .where(and(eq(maintenanceRecords.id, id), eq(maintenanceRecords.userId, userId)))
+      .returning();
+
+    // Update equipment status and dates
+    await this.updateEquipment(
+      existing.equipmentId,
+      {
+        status: 'Active',
+        lastMaintenanceDate: now,
+        nextDueDate: nextScheduledDate || equipment.nextDueDate,
+      },
+      userId
+    );
+
+    // Auto-resolve any open alerts for this equipment
+    await db
+      .update(alerts)
+      .set({
+        status: 'Resolved',
+        resolvedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(alerts.entityType, 'equipment'),
+          eq(alerts.entityId, existing.equipmentId),
+          eq(alerts.userId, userId),
+          eq(alerts.status, 'Open')
+        )
+      );
 
     return record;
   }

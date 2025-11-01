@@ -14,16 +14,17 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal, BarChart3 } from "lucide-react";
+import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal, BarChart3, Wrench } from "lucide-react";
 
 const mainNavItems = [
   { path: "/", icon: Home, label: "Home", testId: "link-home-main" },
   { path: "/dashboard", icon: BarChart3, label: "Analytics", testId: "link-analytics-main" },
   { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "link-equipment-main" },
-  { path: "/tasks", icon: CheckSquare, label: "Maintenance", testId: "link-maintenance-main" },
+  { path: "/maintenance", icon: Wrench, label: "Maintenance", testId: "link-maintenance-main" },
 ];
 
 const secondaryNavItems = [
+  { path: "/tasks", icon: CheckSquare, label: "Schedules", testId: "link-schedules-more" },
   { path: "/facilities", icon: Building2, label: "Facilities", testId: "link-facilities-more" },
   { path: "/history", icon: History, label: "Reports", testId: "link-reports-more" },
   { path: "/settings", icon: Settings, label: "Settings", testId: "link-settings-more" },

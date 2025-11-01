@@ -366,6 +366,14 @@ export type Contract = typeof contracts.$inferSelect;
 // Maintenance Records Table
 // ============================================
 
+// Maintenance record status enum
+export const maintenanceRecordStatusEnum = z.enum(["In Progress", "Completed", "Pending Verification"]);
+export type MaintenanceRecordStatus = z.infer<typeof maintenanceRecordStatusEnum>;
+
+// Verification status enum
+export const verificationStatusEnum = z.enum(["Verified", "Rejected", "Pending"]);
+export type VerificationStatus = z.infer<typeof verificationStatusEnum>;
+
 export const maintenanceRecords = pgTable("maintenance_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id")
@@ -374,16 +382,31 @@ export const maintenanceRecords = pgTable("maintenance_records", {
   equipmentId: varchar("equipment_id")
     .notNull()
     .references(() => equipment.id, { onDelete: "cascade" }),
-  maintenanceDate: timestamp("maintenance_date").notNull(),
-  maintenanceType: varchar("maintenance_type", { length: 100 }), // e.g., "Preventive", "Corrective", "Inspection"
+  technicianId: varchar("technician_id").references(() => users.id, { onDelete: "set null" }),
+  maintenanceDate: timestamp("maintenance_date").notNull(), // Start date (kept for backward compatibility)
+  startDate: timestamp("start_date"), // Start timestamp for work in progress
+  endDate: timestamp("end_date"), // Completion timestamp
+  maintenanceType: varchar("maintenance_type", { length: 100 }).notNull().default("Preventive"), // Preventive, Corrective, Calibration, Inspection, Emergency
   description: text("description"),
-  performedBy: varchar("performed_by", { length: 255 }),
-  completed: boolean("completed").notNull().default(true),
+  actionsTaken: text("actions_taken"), // Detailed work performed
+  partsUsed: text("parts_used"), // Parts/components replaced or used
+  performedBy: varchar("performed_by", { length: 255 }), // Technician name (text field for backward compatibility)
+  cost: decimal("cost", { precision: 10, scale: 2 }).default("0"), // Cost in KWD
+  status: varchar("status", { length: 50 }).notNull().default("In Progress"), // In Progress, Completed, Pending Verification
+  verificationStatus: varchar("verification_status", { length: 50 }).notNull().default("Pending"), // Verified, Rejected, Pending
+  verifiedBy: varchar("verified_by").references(() => users.id, { onDelete: "set null" }),
+  verifiedAt: timestamp("verified_at"),
+  completed: boolean("completed").notNull().default(false), // Backward compatibility flag
   nextScheduledDate: timestamp("next_scheduled_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("maintenance_records_user_idx").on(table.userId),
+  index("maintenance_records_equipment_idx").on(table.equipmentId),
+  index("maintenance_records_status_idx").on(table.status),
+  index("maintenance_records_technician_idx").on(table.technicianId),
+]);
 
 export const maintenanceRecordsRelations = relations(maintenanceRecords, ({ one }) => ({
   user: one(users, {
@@ -394,6 +417,14 @@ export const maintenanceRecordsRelations = relations(maintenanceRecords, ({ one 
     fields: [maintenanceRecords.equipmentId],
     references: [equipment.id],
   }),
+  technician: one(users, {
+    fields: [maintenanceRecords.technicianId],
+    references: [users.id],
+  }),
+  verifier: one(users, {
+    fields: [maintenanceRecords.verifiedBy],
+    references: [users.id],
+  }),
 }));
 
 export const insertMaintenanceRecordSchema = createInsertSchema(maintenanceRecords).omit({
@@ -401,6 +432,10 @@ export const insertMaintenanceRecordSchema = createInsertSchema(maintenanceRecor
   userId: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  status: maintenanceRecordStatusEnum.optional(),
+  verificationStatus: verificationStatusEnum.optional(),
+  maintenanceType: z.string().min(1, "Maintenance type is required").optional(),
 });
 
 export type InsertMaintenanceRecord = z.infer<typeof insertMaintenanceRecordSchema>;
