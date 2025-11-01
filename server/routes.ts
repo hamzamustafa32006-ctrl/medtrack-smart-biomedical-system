@@ -608,6 +608,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Real-time analytics stream using Server-Sent Events (SSE)
+  app.get("/api/analytics/stream", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    
+    // Set SSE headers
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    let lastHash: string | null = null;
+    let closed = false;
+
+    // Clean up on client disconnect
+    req.on("close", () => {
+      closed = true;
+      if (intervalId) clearInterval(intervalId);
+    });
+
+    // Helper to hash payload for change detection
+    const crypto = await import("crypto");
+    function hashPayload(obj: any): string {
+      return crypto.createHash("sha1").update(JSON.stringify(obj)).digest("hex");
+    }
+
+    // Push analytics data if changed
+    async function pushUpdate() {
+      if (closed) return;
+      
+      try {
+        const data = await storage.getAnalyticsSummary(userId);
+        const hash = hashPayload(data);
+        
+        // Only send if data has changed
+        if (hash !== lastHash) {
+          lastHash = hash;
+          res.write(`event: analytics\n`);
+          res.write(`data: ${JSON.stringify(data)}\n\n`);
+        }
+      } catch (error) {
+        console.error("SSE push error:", error);
+        res.write(`event: error\ndata: "analytics_failed"\n\n`);
+      }
+    }
+
+    // Send initial snapshot immediately
+    await pushUpdate();
+
+    // Poll for updates every 5 seconds
+    const intervalId = setInterval(() => {
+      if (!closed) pushUpdate();
+    }, 5000);
+  });
+
   // Widget script that auto-creates analytics dashboard counters
   app.get("/widgets/analytics-summary.js", isAuthenticated, async (req: any, res) => {
     res.type("application/javascript");

@@ -1,0 +1,157 @@
+/* ===== REAL-TIME EQUIPMENT ANALYTICS (SSE + WIDGET + AUTO-INJECT) ===== */
+import db from './db.js'; // adjust path if different
+import crypto from 'crypto';
+
+/* ---------- 1) Summary query (uses your existing fields) ---------- */
+const SUMMARY_SQL = `
+  WITH base AS (
+    SELECT status_color, is_overdue, last_maintenance_date, next_due_date
+    FROM equipment
+  )
+  SELECT
+    COUNT(*)                                                   AS total,
+    COUNT(*) FILTER (WHERE is_overdue)                         AS overdue,
+    COUNT(*) FILTER (WHERE status_color='red')                 AS critical,
+    COUNT(*) FILTER (WHERE status_color='orange')              AS upcoming,
+    COUNT(*) FILTER (WHERE status_color='green')               AS healthy,
+    COUNT(*) FILTER (
+      WHERE COALESCE(last_maintenance_date, DATE '1900-01-01')
+            >= CURRENT_DATE - INTERVAL '7 days'
+    ) AS resolved_this_week,
+    COUNT(*) FILTER (
+      WHERE next_due_date >= CURRENT_DATE
+        AND next_due_date <  CURRENT_DATE + INTERVAL '7 days'
+    ) AS due_next_7d
+`;
+
+/* Helper to hash a JSON payload (so we only push when it changes) */
+function hashPayload(obj) {
+  return crypto.createHash('sha1').update(JSON.stringify(obj)).digest('hex');
+}
+
+/* ---------- 2) REST: initial snapshot ---------- */
+app.get('/api/analytics/summary', async (req, res) => {
+  try {
+    const row = await db.one(SUMMARY_SQL);
+    res.json(row);
+  } catch (e) {
+    console.error('GET /api/analytics/summary error', e);
+    res.status(500).json({ error: 'analytics_failed' });
+  }
+});
+
+/* ---------- 3) SSE stream: real-time updates ---------- */
+app.get('/api/analytics/stream', async (req, res) => {
+  // SSE headers
+  res.writeHead(200, {
+    'Content-Type' : 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection'   : 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  let lastHash = null;
+  let closed = false;
+
+  req.on('close', () => { closed = true; clearInterval(tick); });
+
+  async function pushOnce() {
+    try {
+      const data = await db.one(SUMMARY_SQL);
+      const h = hashPayload(data);
+      if (h !== lastHash) {
+        lastHash = h;
+        res.write(`event: analytics\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      }
+    } catch (e) {
+      console.error('SSE push error', e);
+      res.write(`event: error\ndata: "analytics_failed"\n\n`);
+    }
+  }
+
+  // Send initial snapshot immediately
+  await pushOnce();
+
+  // Poll every 5 seconds (tweak if you want)
+  const tick = setInterval(() => { if (!closed) pushOnce(); }, 5000);
+});
+
+/* ---------- 4) Live widget (auto-updates counters) ---------- */
+app.get('/widgets/analytics-live.js', async (req, res) => {
+  res.type('application/javascript');
+  // A tiny JS that subscribes to SSE and updates DOM; falls back to one-time fetch
+  res.send(`(function(){
+    function setText(id, val){
+      var el = document.getElementById(id);
+      if (el) el.textContent = val;
+    }
+    function render(d){
+      setText('critical-count', d.critical);
+      setText('upcoming-count', d.upcoming);
+      setText('resolved-count', d.resolved_this_week);
+      setText('overdue-count',  d.overdue);
+      setText('total-count',    d.total);
+      setText('due7d-count',    d.due_next_7d);
+    }
+    function ensureBox(id, label){
+      var el = document.getElementById(id);
+      if(!el){
+        var wrap = document.getElementById('alert-counters');
+        if(!wrap){
+          wrap = document.createElement('div');
+          wrap.id = 'alert-counters';
+          wrap.style.display='flex'; wrap.style.gap='12px';
+          wrap.style.margin='8px 0 16px'; wrap.style.flexWrap='wrap';
+          (document.querySelector('[data-dashboard-header]')||document.body).prepend(wrap);
+        }
+        var box = document.createElement('div'); box.style.padding='8px 12px';
+        box.style.border='1px solid #e5e7eb'; box.style.borderRadius='8px';
+        box.style.fontFamily='system-ui, sans-serif';
+        var name=document.createElement('div'); name.style.fontSize='12px'; name.style.opacity='0.75'; name.textContent=label;
+        var val=document.createElement('div'); val.id=id; val.style.fontSize='20px'; val.style.fontWeight='600';
+        box.appendChild(name); box.appendChild(val); wrap.appendChild(box);
+      }
+    }
+    // Auto-create boxes if not present
+    ensureBox('critical-count','Critical');
+    ensureBox('upcoming-count','Upcoming');
+    ensureBox('resolved-count','Resolved (7d)');
+    ensureBox('overdue-count','Overdue');
+    ensureBox('total-count','Total');
+    ensureBox('due7d-count','Due Next 7d');
+
+    // Prefer SSE for live updates; fallback to fetch
+    if ('EventSource' in window){
+      var es = new EventSource('/api/analytics/stream');
+      es.addEventListener('analytics', function(ev){
+        try { render(JSON.parse(ev.data)); } catch(e){}
+      });
+      es.onerror = function(){ /* optional: silent */ };
+    } else {
+      fetch('/api/analytics/summary').then(r=>r.json()).then(render).catch(()=>{});
+      setInterval(function(){
+        fetch('/api/analytics/summary').then(r=>r.json()).then(render).catch(()=>{});
+      }, 5000);
+    }
+  })();`);
+});
+
+/* ---------- 5) Auto-inject widget into any HTML response ---------- */
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+  res.send = (body) => {
+    try {
+      const ct = (res.get('Content-Type') || '').toLowerCase();
+      if (typeof body === 'string' && body.includes('</body>') && ct.includes('text/html')) {
+        const tag = '<script src="/widgets/analytics-live.js"></script>';
+        if (!body.includes('/widgets/analytics-live.js')) {
+          body = body.replace('</body>', tag + '\\n</body>');
+        }
+      }
+    } catch (_) {}
+    return originalSend(body);
+  };
+  next();
+});
+/* ===== END REAL-TIME PATCH ===== */
