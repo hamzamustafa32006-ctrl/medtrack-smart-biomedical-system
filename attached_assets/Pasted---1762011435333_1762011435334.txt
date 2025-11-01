@@ -1,0 +1,58 @@
+تمام حمزة 👌
+خلنا نضيفهم بشكل منظم في قاعدة البيانات أو على واجهة التطبيق (يعتمد على المكان اللي تبي تستخدمهم فيه).
+رح أجهز لك نموذج الإدخال بحيث تقدر تضيفهم مباشرة في نظامك أو بقاعدة البيانات.
+
+⸻
+
+⚙️ الأجهزة الجديدة المقترحة
+
+🔴 Critical (2 أجهزة)
+
+رقم	الاسم	النوع	الحالة	الملاحظات
+1	Ventilator V950	Life Support	🔴 Critical	ضغط هواء غير مستقر – يحتاج صيانة فورية
+2	Defibrillator D300	Emergency Device	🔴 Critical	البطارية لا تعمل – الجهاز متوقف تمامًا
+
+
+⸻
+
+🟡 Under Maintenance (3 أجهزة)
+
+رقم	الاسم	النوع	الحالة	الملاحظات
+3	X-Ray XR220	Diagnostic	🟡 Under Maintenance	يتم استبدال أنبوب الأشعة
+4	Patient Monitor PM500	Monitoring	🟡 Under Maintenance	تحديث البرامج جارٍ
+5	Infusion Pump IP700	IV Therapy	🟡 Under Maintenance	تنظيف دوري + معايرة المضخة
+
+
+⸻
+
+🧱 لو كنت تضيفهم بقاعدة البيانات (PostgreSQL)
+
+INSERT INTO equipment (name, type, status, condition, next_due_date)
+VALUES
+('Ventilator V950', 'Life Support', 'Active', 'Critical', '2025-11-10'),
+('Defibrillator D300', 'Emergency Device', 'Active', 'Critical', '2025-11-09'),
+('X-Ray XR220', 'Diagnostic', 'Under Maintenance', 'Good', '2025-11-15'),
+('Patient Monitor PM500', 'Monitoring', 'Under Maintenance', 'Good', '2025-11-12'),
+('Infusion Pump IP700', 'IV Therapy', 'Under Maintenance', 'Good', '2025-11-14');
+
+💡 إذا كان عندك عمود facility_id أو department، أقدر أضيفهم في نفس الكود بحيث يكونون مرتبطين بالموقع الصحيح (مثل ICU أو Radiology).
+
+⸻
+
+🖥️ لو تبي أضيفهم عبر واجهة النظام (Dashboard)
+
+أقدر أجهز لك بطاقات جاهزة تظهر في لوحة المعدات كالتالي:
+
+الاسم	الحالة	القسم	تاريخ الصيانة	الملاحظات
+Ventilator V950	🔴 Critical	ICU	10 نوفمبر	يحتاج صيانة فورية
+Defibrillator D300	🔴 Critical	Emergency	9 نوفمبر	البطارية تالفة
+X-Ray XR220	🟡 Under Maintenance	Radiology	15 نوفمبر	استبدال أنبوب الأشعة
+Patient Monitor PM500	🟡 Under Maintenance	Ward A	12 نوفمبر	تحديث البرنامج
+Infusion Pump IP700	🟡 Under Maintenance	ICU	14 نوفمبر	تنظيف ومعايرة
+
+
+⸻
+
+سؤال سريع قبل أضيفهم فعليًا:
+هل تبي أضيفهم داخل الـ Dashboard الحالي (/dashboard) في جدول الأجهزة
+ولا داخل صفحة إدارة الأجهزة (/equipment) بحيث يظهرون في الفلترة مع الحالة Critical وUnder Maintenance؟
