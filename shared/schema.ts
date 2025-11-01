@@ -447,6 +447,74 @@ export type InsertMaintenanceTask = z.infer<typeof insertMaintenanceTaskSchema>;
 export type MaintenanceTask = typeof maintenanceTasks.$inferSelect;
 
 // ============================================
+// Maintenance Schedules Table
+// ============================================
+
+export const maintenanceTypeEnum = z.enum(["Preventive", "Corrective", "Calibration", "Inspection"]);
+export type MaintenanceType = z.infer<typeof maintenanceTypeEnum>;
+
+export const scheduleStatusEnum = z.enum(["Scheduled", "In Progress", "Completed", "Overdue"]);
+export type ScheduleStatus = z.infer<typeof scheduleStatusEnum>;
+
+export const schedulePriorityEnum = z.enum(["Low", "Medium", "High", "Critical"]);
+export type SchedulePriority = z.infer<typeof schedulePriorityEnum>;
+
+export const maintenanceSchedules = pgTable("maintenance_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  equipmentId: varchar("equipment_id")
+    .notNull()
+    .references(() => equipment.id, { onDelete: "cascade" }),
+  maintenanceType: varchar("maintenance_type", { length: 50 }).notNull().default("Preventive"),
+  frequencyDays: integer("frequency_days").notNull().default(180),
+  lastMaintenanceDate: timestamp("last_maintenance_date"),
+  nextDueDate: timestamp("next_due_date").notNull(),
+  assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  priority: varchar("priority", { length: 50 }).notNull().default("Medium"),
+  status: varchar("status", { length: 50 }).notNull().default("Scheduled"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("maintenance_schedules_user_idx").on(table.userId),
+  index("maintenance_schedules_equipment_idx").on(table.equipmentId),
+  index("maintenance_schedules_status_idx").on(table.status),
+  index("maintenance_schedules_due_date_idx").on(table.nextDueDate),
+  index("maintenance_schedules_assigned_idx").on(table.assignedTo),
+]);
+
+export const maintenanceSchedulesRelations = relations(maintenanceSchedules, ({ one }) => ({
+  user: one(users, {
+    fields: [maintenanceSchedules.userId],
+    references: [users.id],
+  }),
+  equipment: one(equipment, {
+    fields: [maintenanceSchedules.equipmentId],
+    references: [equipment.id],
+  }),
+  assignedToUser: one(users, {
+    fields: [maintenanceSchedules.assignedTo],
+    references: [users.id],
+  }),
+}));
+
+export const insertMaintenanceScheduleSchema = createInsertSchema(maintenanceSchedules).omit({
+  id: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  maintenanceType: maintenanceTypeEnum.optional(),
+  status: scheduleStatusEnum.optional(),
+  priority: schedulePriorityEnum.optional(),
+});
+
+export type InsertMaintenanceSchedule = z.infer<typeof insertMaintenanceScheduleSchema>;
+export type MaintenanceSchedule = typeof maintenanceSchedules.$inferSelect;
+
+// ============================================
 // Alerts Table
 // ============================================
 
