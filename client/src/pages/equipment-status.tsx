@@ -21,7 +21,7 @@ function Section({ title, icon, color, equipment }: SectionProps) {
       </div>
       
       {equipment.length === 0 ? (
-        <p className="text-sm text-muted-foreground">لا توجد أجهزة في هذه الفئة</p>
+        <p className="text-sm text-muted-foreground">No equipment in this category</p>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {equipment.map((item) => (
@@ -38,20 +38,20 @@ function Section({ title, icon, color, equipment }: SectionProps) {
               
               <div className="mt-3 pt-3 border-t space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">المنشأة:</span>
+                  <span className="text-muted-foreground">Facility:</span>
                   <span className="text-foreground font-medium">{item.facilityName || "—"}</span>
                 </div>
                 {item.department && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">القسم:</span>
+                    <span className="text-muted-foreground">Department:</span>
                     <span className="text-foreground font-medium">{item.department}</span>
                   </div>
                 )}
                 {item.lastMaintenanceDate && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">آخر صيانة:</span>
+                    <span className="text-muted-foreground">Last Maintenance:</span>
                     <span className="text-foreground font-medium">
-                      {new Date(item.lastMaintenanceDate).toLocaleDateString('ar-KW')}
+                      {new Date(item.lastMaintenanceDate).toLocaleDateString('en-GB')}
                     </span>
                   </div>
                 )}
@@ -96,31 +96,31 @@ export default function EquipmentStatusPage() {
   return (
     <div className="container mx-auto p-4 md:p-6 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">حالة الأجهزة</h1>
+        <h1 className="text-3xl font-bold text-foreground">Equipment Status</h1>
         <p className="text-muted-foreground mt-1">
-          عرض شامل لجميع الأجهزة مقسمة حسب الحالة التشغيلية
+          Comprehensive view of all equipment categorized by operational status
         </p>
       </div>
 
-      {/* 🟢 الأجهزة الجيدة */}
+      {/* 🟢 Good Equipment */}
       <Section
-        title="الأجهزة الجيدة"
+        title="Good Equipment"
         icon={<CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />}
         color="text-green-600 dark:text-green-400"
         equipment={goodEquipment}
       />
 
-      {/* 🟡 تحتاج إلى صيانة */}
+      {/* 🟡 Needs Maintenance */}
       <Section
-        title="الأجهزة التي تحتاج إلى صيانة"
+        title="Equipment Needs Maintenance"
         icon={<AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />}
         color="text-orange-600 dark:text-orange-400"
         equipment={needsMaintenanceEquipment}
       />
 
-      {/* 🔴 لا تعمل */}
+      {/* 🔴 Not Working */}
       <Section
-        title="الأجهزة المعطلة"
+        title="Not Working Equipment"
         icon={<XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />}
         color="text-red-600 dark:text-red-400"
         equipment={notWorkingEquipment}
