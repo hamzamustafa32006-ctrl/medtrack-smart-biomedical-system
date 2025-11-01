@@ -1,0 +1,92 @@
+التقسيم الجديد للصفحة
+<div className="p-6 space-y-8">
+  <h1 className="text-xl font-bold mb-4">حالة الأجهزة</h1>
+
+  {/* 🟢 جيد */}
+  <Section
+    title="🟢 الأجهزة الجيدة"
+    color="text-green-600"
+    equipment={equipment.filter(e => e.status === 'Good')}
+  />
+
+  {/* 🟡 يحتاج إلى صيانة */}
+  <Section
+    title="🟡 الأجهزة التي تحتاج إلى صيانة"
+    color="text-yellow-600"
+    equipment={equipment.filter(e => e.status === 'Needs Maintenance')}
+  />
+
+  {/* 🔴 لا يعمل */}
+  <Section
+    title="🔴 الأجهزة المعطلة"
+    color="text-red-600"
+    equipment={equipment.filter(e => e.status === 'Not Working')}
+  />
+</div>
+⚙️ مكوّن القسم (Section Component)
+function Section({ title, color, equipment }) {
+  return (
+    <div>
+      <h2 className={`text-lg font-semibold mb-3 ${color}`}>{title}</h2>
+      {equipment.length === 0 ? (
+        <p className="text-gray-500">لا توجد أجهزة في هذه الفئة.</p>
+      ) : (
+        <div className="grid md:grid-cols-3 gap-4">
+          {equipment.map((item) => (
+            <div
+              key={item.id}
+              className="border rounded-xl p-4 shadow-sm hover:shadow-md transition"
+            >
+              <h3 className="font-semibold text-gray-800">{item.name}</h3>
+              <p className="text-sm text-gray-500">{item.model}</p>
+              <p className="text-sm mt-1">
+                الحالة:
+                <span
+                  className={`ml-1 font-medium ${
+                    item.status === "Good"
+                      ? "text-green-600"
+                      : item.status === "Needs Maintenance"
+                      ? "text-yellow-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {item.status === "Good"
+                    ? "جيد"
+                    : item.status === "Needs Maintenance"
+                    ? "يحتاج إلى صيانة"
+                    : "لا يعمل"}
+                </span>
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                آخر صيانة: {item.last_maintenance_date || "غير محدد"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+🧱 تعديل حالة الأجهزة في قاعدة البيانات (Backend)
+حتى يظهر التقسيم بشكل صحيح، نحتاج أن يكون جدول equipment يحتوي على الحالات الجديدة:
+ALTER TABLE equipment
+ADD COLUMN condition_status TEXT CHECK (condition_status IN ('Good','Needs Maintenance','Not Working')) DEFAULT 'Good';
+يمكنك تحديث الحالات تلقائيًا بناءً على “موعد الصيانة القادمة” أو “التنبيهات”.
+مثال تحديث آلي:
+UPDATE equipment
+SET condition_status = 
+  CASE
+    WHEN next_due_date <= CURRENT_DATE THEN 'Not Working'
+    WHEN next_due_date <= CURRENT_DATE + INTERVAL '7 days' THEN 'Needs Maintenance'
+    ELSE 'Good'
+  END;
+🧩 تحديث من الـ API
+لو تريد عرض الصفحة تعتمد على البيانات الحقيقية:
+app.get('/equipment/status', async (req, res) => {
+  const result = await db.query(`
+    SELECT id, name, model, condition_status, last_maintenance_date
+    FROM equipment
+    ORDER BY condition_status DESC;
+  `);
+  res.json(result.rows);
+});

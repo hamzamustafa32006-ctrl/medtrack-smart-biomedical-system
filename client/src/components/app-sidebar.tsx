@@ -14,7 +14,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal, BarChart3, Wrench } from "lucide-react";
+import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal, BarChart3, Wrench, Activity } from "lucide-react";
 
 const mainNavItems = [
   { path: "/", icon: Home, label: "Home", testId: "link-home-main" },
@@ -24,6 +24,7 @@ const mainNavItems = [
 ];
 
 const secondaryNavItems = [
+  { path: "/equipment-status", icon: Activity, label: "Equipment Status", testId: "link-equipment-status-more" },
   { path: "/tasks", icon: CheckSquare, label: "Schedules", testId: "link-schedules-more" },
   { path: "/facilities", icon: Building2, label: "Facilities", testId: "link-facilities-more" },
   { path: "/history", icon: History, label: "Reports", testId: "link-reports-more" },

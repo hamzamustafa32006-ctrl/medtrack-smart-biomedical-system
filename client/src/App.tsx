@@ -18,6 +18,7 @@ import Tasks from "@/pages/tasks";
 import Facilities from "@/pages/facilities";
 import Equipment from "@/pages/equipment";
 import Maintenance from "@/pages/maintenance";
+import EquipmentStatus from "@/pages/equipment-status";
 import History from "@/pages/history";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
@@ -41,6 +42,7 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/facilities" component={Facilities} />
       <Route path="/equipment" component={Equipment} />
+      <Route path="/equipment-status" component={EquipmentStatus} />
       <Route path="/maintenance" component={Maintenance} />
       <Route path="/history" component={History} />
       <Route path="/settings" component={Settings} />
