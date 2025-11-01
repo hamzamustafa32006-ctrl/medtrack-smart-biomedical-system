@@ -105,6 +105,7 @@ export default function EquipmentPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
   const { data: equipment, isLoading } = useQuery<Equipment[]>({
     queryKey: ["/api/equipment"],
@@ -816,7 +817,33 @@ export default function EquipmentPage() {
             </CardHeader>
           </Card>
         ) : (
-          <Card>
+          <>
+            {/* View Toggle */}
+            <div className="flex justify-end mb-4">
+              <div className="flex gap-2 border rounded-md p-1">
+                <Button
+                  variant={viewMode === "list" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("list")}
+                  data-testid="button-view-list"
+                >
+                  <LayoutList className="w-4 h-4 mr-2" />
+                  List
+                </Button>
+                <Button
+                  variant={viewMode === "grid" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("grid")}
+                  data-testid="button-view-grid"
+                >
+                  <LayoutGrid className="w-4 h-4 mr-2" />
+                  Grid
+                </Button>
+              </div>
+            </div>
+
+            {viewMode === "list" ? (
+              <Card>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -922,6 +949,84 @@ export default function EquipmentPage() {
               </Table>
             </div>
           </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredAndSortedEquipment.map((equip) => {
+                  const facility = facilities?.find((f) => f.id === equip.facilityId);
+                  const nextMaintenance = getNextMaintenanceDate(equip);
+                  const daysUntilMaintenance = nextMaintenance ? differenceInDays(nextMaintenance, new Date()) : null;
+                  
+                  return (
+                    <Card 
+                      key={equip.id} 
+                      className="hover-elevate active-elevate-2 cursor-pointer transition-all"
+                      onClick={() => openDetailDrawer(equip)}
+                      data-testid={`card-equipment-${equip.id}`}
+                    >
+                      <CardHeader className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <CardTitle className="text-lg line-clamp-1" data-testid={`text-equipment-name-${equip.id}`}>
+                            {equip.name}
+                          </CardTitle>
+                          <div className="flex gap-1 flex-wrap justify-end">
+                            <StatusBadge status={equip.status} />
+                          </div>
+                        </div>
+                        {equip.type && (
+                          <p className="text-sm text-muted-foreground line-clamp-1" data-testid={`text-equipment-type-${equip.id}`}>
+                            {equip.type}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <CriticalityBadge criticality={equip.criticality} />
+                          {equip.condition && <ConditionBadge condition={equip.condition} />}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {facility && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">{facility.name}</span>
+                          </div>
+                        )}
+                        {equip.department && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <MapPin className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">{equip.department}</span>
+                          </div>
+                        )}
+                        {equip.installDate && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Calendar className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-xs text-muted-foreground">Installed</p>
+                              <p className="font-medium">{formatDate(new Date(equip.installDate))}</p>
+                            </div>
+                          </div>
+                        )}
+                        {nextMaintenance && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Wrench className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-xs text-muted-foreground">Next Maintenance</p>
+                              <p className={`font-medium ${daysUntilMaintenance! < 0 ? "text-destructive" : daysUntilMaintenance! <= 7 ? "text-orange-600" : ""}`}>
+                                {formatDate(nextMaintenance)}
+                                {daysUntilMaintenance !== null && (
+                                  <span className="text-xs ml-2">
+                                    {daysUntilMaintenance < 0 ? `(${Math.abs(daysUntilMaintenance)}d overdue)` : `(in ${daysUntilMaintenance}d)`}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
