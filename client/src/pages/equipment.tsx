@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText, QrCode, LayoutGrid, LayoutList } from "lucide-react";
+import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText, QrCode, LayoutGrid, LayoutList, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
 import { QRCodeSVG } from "qrcode.react";
@@ -359,6 +360,13 @@ export default function EquipmentPage() {
       setSortDirection("asc");
     }
   };
+
+  // Fetch enhanced equipment details with alerts and maintenance records
+  const { data: equipmentDetails, refetch: refetchDetails } = useQuery<any>({
+    queryKey: ["/api/equipment", selectedEquipment?.id, "details"],
+    enabled: !!selectedEquipment?.id,
+    staleTime: 0,
+  });
 
   const openDetailDrawer = (equip: Equipment) => {
     setSelectedEquipment(equip);
@@ -1220,49 +1228,126 @@ export default function EquipmentPage() {
                 {/* Maintenance & Alerts Tab */}
                 <TabsContent value="maintenance" className="space-y-4">
                   {(() => {
-                    const nextDate = getNextMaintenanceDate(selectedEquipment);
+                    const currentEquipment = equipmentDetails || selectedEquipment;
+                    const nextDate = getNextMaintenanceDate(currentEquipment);
                     const daysUntil = nextDate ? differenceInDays(nextDate, new Date()) : null;
+                    const lastDate = currentEquipment.lastMaintenanceDate ? new Date(currentEquipment.lastMaintenanceDate) : null;
+                    
+                    let progressPercentage = 0;
+                    if (currentEquipment.maintenanceFrequencyDays && lastDate && nextDate) {
+                      const totalCycleDays = differenceInDays(nextDate, lastDate);
+                      const daysPassed = differenceInDays(new Date(), lastDate);
+                      progressPercentage = Math.min(Math.max((daysPassed / totalCycleDays) * 100, 0), 100);
+                    }
                     
                     return (
                       <>
+                        {/* Maintenance Schedule Card with Progress */}
                         {nextDate && (
                           <Card className="p-4">
-                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                              <Wrench className="w-4 h-4" />
-                              Next Maintenance
-                            </h3>
-                            <div className="space-y-2">
-                              <div className="text-2xl font-bold" data-testid="text-detail-next-maintenance">
-                                {formatDate(nextDate)}
+                            <div className="flex items-center justify-between mb-4">
+                              <h3 className="text-sm font-semibold flex items-center gap-2">
+                                <Wrench className="w-4 h-4" />
+                                Maintenance Schedule
+                              </h3>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => refetchDetails()}
+                                data-testid="button-refresh-details"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                {lastDate && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-1">Last Maintenance</div>
+                                    <div className="text-sm font-medium" data-testid="text-detail-last-maintenance">
+                                      {formatDate(lastDate)}
+                                    </div>
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-1">Next Due</div>
+                                  <div className="text-sm font-medium" data-testid="text-detail-next-maintenance">
+                                    {formatDate(nextDate)}
+                                  </div>
+                                </div>
                               </div>
-                              <div className={`text-sm font-medium ${daysUntil! < 0 ? "text-destructive" : daysUntil! <= 7 ? "text-orange-600" : "text-muted-foreground"}`}>
-                                {daysUntil! < 0 ? `${Math.abs(daysUntil!)} days overdue` : `in ${daysUntil} days`}
-                              </div>
+                              
+                              {currentEquipment.maintenanceFrequencyDays && (
+                                <>
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="text-xs text-muted-foreground">Progress to Next Maintenance</div>
+                                      <div className={`text-xs font-medium ${daysUntil! < 0 ? "text-destructive" : daysUntil! <= 7 ? "text-orange-600" : "text-muted-foreground"}`}>
+                                        {daysUntil! < 0 ? `${Math.abs(daysUntil!)} days overdue` : `${daysUntil} days remaining`}
+                                      </div>
+                                    </div>
+                                    <Progress 
+                                      value={progressPercentage} 
+                                      className="h-2"
+                                      data-testid="progress-maintenance"
+                                    />
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Frequency: Every {currentEquipment.maintenanceFrequencyDays} days
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </Card>
                         )}
 
-                        {selectedEquipment.lastMaintenanceDate && (
-                          <Card className="p-4">
-                            <h3 className="text-sm font-semibold mb-3">Last Maintenance</h3>
-                            <div className="text-sm" data-testid="text-detail-last-maintenance">
-                              Completed on {formatDate(new Date(selectedEquipment.lastMaintenanceDate))}
-                            </div>
-                          </Card>
-                        )}
-
-                        {selectedEquipment.maintenanceFrequencyDays && (
-                          <Card className="p-4">
-                            <h3 className="text-sm font-semibold mb-3">Maintenance Schedule</h3>
-                            <div className="text-sm" data-testid="text-detail-frequency">
-                              Every {selectedEquipment.maintenanceFrequencyDays} days
-                            </div>
-                          </Card>
-                        )}
-
+                        {/* Active Alerts Card */}
                         <Card className="p-4">
-                          <h3 className="text-sm font-semibold mb-3">Active Alerts</h3>
-                          <p className="text-sm text-muted-foreground">No active alerts</p>
+                          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4" />
+                            Active Alerts
+                          </h3>
+                          {equipmentDetails?.alerts && equipmentDetails.alerts.length > 0 ? (
+                            <div className="space-y-2">
+                              {equipmentDetails.alerts.map((alert: any) => (
+                                <div 
+                                  key={alert.id}
+                                  className={`p-3 border-l-4 rounded-md ${
+                                    alert.severity === 'critical' 
+                                      ? 'bg-red-50 dark:bg-red-950/20 border-red-500' 
+                                      : alert.severity === 'warning'
+                                      ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-500'
+                                      : 'bg-blue-50 dark:bg-blue-950/20 border-blue-500'
+                                  }`}
+                                  data-testid={`alert-${alert.id}`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1">
+                                      <div className="font-medium text-sm">{alert.title}</div>
+                                      <div className="text-xs text-muted-foreground mt-1">{alert.message}</div>
+                                    </div>
+                                    <Badge 
+                                      variant={alert.severity === 'critical' ? 'destructive' : alert.severity === 'warning' ? 'secondary' : 'outline'}
+                                      className="capitalize text-xs"
+                                    >
+                                      {alert.severity}
+                                    </Badge>
+                                  </div>
+                                  {alert.createdAt && (
+                                    <div className="text-xs text-muted-foreground mt-2">
+                                      {formatDate(new Date(alert.createdAt))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <CheckCircle2 className="w-4 h-4 text-green-600" />
+                              <span>No active alerts</span>
+                            </div>
+                          )}
                         </Card>
                       </>
                     );
@@ -1312,63 +1397,82 @@ export default function EquipmentPage() {
                 <TabsContent value="history" className="space-y-4">
                   {/* Maintenance History Table */}
                   <Card className="p-4">
-                    <h3 className="text-sm font-semibold mb-4">Maintenance History</h3>
-                    <div className="border rounded-lg overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-xs">Date</TableHead>
-                            <TableHead className="text-xs">Type</TableHead>
-                            <TableHead className="text-xs">Result</TableHead>
-                            <TableHead className="text-xs">Performed By</TableHead>
-                            <TableHead className="text-xs">Notes</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {(() => {
-                            const equipmentRecords = maintenanceRecords?.filter(
-                              (record) => record.equipmentId === selectedEquipment.id
-                            ) || [];
-
-                            if (equipmentRecords.length === 0) {
-                              return (
-                                <TableRow>
-                                  <TableCell colSpan={5} className="text-center py-8 text-sm text-muted-foreground">
-                                    No maintenance records available
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            }
-
-                            return equipmentRecords
-                              .sort((a, b) => new Date(b.maintenanceDate).getTime() - new Date(a.maintenanceDate).getTime())
-                              .map((record) => (
-                                <TableRow key={record.id}>
-                                  <TableCell className="text-sm">
-                                    {formatDate(new Date(record.maintenanceDate))}
-                                  </TableCell>
-                                  <TableCell className="text-sm">{record.maintenanceType || "—"}</TableCell>
-                                  <TableCell className="text-sm">
-                                    {record.completed ? (
-                                      <Badge variant="outline" className="border-green-600 text-green-700 dark:text-green-400">
-                                        Completed
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                                        Pending
-                                      </Badge>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-sm">{record.performedBy || "—"}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
-                                    {record.notes || record.description || "—"}
-                                  </TableCell>
-                                </TableRow>
-                              ));
-                          })()}
-                        </TableBody>
-                      </Table>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-semibold">Maintenance History</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => refetchDetails()}
+                        data-testid="button-refresh-history"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
                     </div>
+                    
+                    {equipmentDetails?.maintenanceRecords && equipmentDetails.maintenanceRecords.length > 0 ? (
+                      <div className="border rounded-lg overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Date</TableHead>
+                              <TableHead className="text-xs">Type</TableHead>
+                              <TableHead className="text-xs">Status</TableHead>
+                              <TableHead className="text-xs">Technician</TableHead>
+                              <TableHead className="text-xs">Cost</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {equipmentDetails.maintenanceRecords.map((record: any) => (
+                              <TableRow key={record.id} className="hover-elevate">
+                                <TableCell className="text-sm">
+                                  {record.createdAt ? formatDate(new Date(record.createdAt)) : '—'}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  <Badge variant="outline" className="text-xs">
+                                    {record.maintenanceType || 'General'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {record.status === 'Completed' ? (
+                                    <div className="flex items-center gap-1 text-green-600">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span className="text-xs">Completed</span>
+                                    </div>
+                                  ) : record.status === 'In Progress' ? (
+                                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 text-xs">
+                                      In Progress
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-xs">
+                                      {record.status}
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {record.technician?.email ? (
+                                    <div>
+                                      <div className="font-medium">
+                                        {record.technician.email.split('@')[0]}
+                                      </div>
+                                    </div>
+                                  ) : '—'}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {record.cost ? `${record.cost} KWD` : '—'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                          <FileText className="w-8 h-8 opacity-50" />
+                          <p className="text-sm">No maintenance records available</p>
+                        </div>
+                      </div>
+                    )}
                   </Card>
 
                   {/* Equipment Notes */}

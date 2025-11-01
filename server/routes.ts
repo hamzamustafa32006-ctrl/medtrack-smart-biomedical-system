@@ -260,6 +260,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get equipment details with alerts and maintenance records
+  app.get("/api/equipment/:id/details", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { id } = req.params;
+      const { db } = await import("./db");
+      const { equipment, alerts, maintenanceRecords, facilities, users } = await import("@shared/schema");
+      const { eq, and, desc } = await import("drizzle-orm");
+
+      const result = await db
+        .select({
+          equipment: equipment,
+          facility: facilities,
+        })
+        .from(equipment)
+        .leftJoin(facilities, eq(equipment.facilityId, facilities.id))
+        .where(and(eq(equipment.id, id), eq(equipment.userId, userId)))
+        .limit(1);
+
+      if (result.length === 0) {
+        return res.status(404).json({ message: "Equipment not found" });
+      }
+
+      const equipmentData = result[0];
+
+      const [activeAlerts, recentMaintenanceRecords] = await Promise.all([
+        db
+          .select()
+          .from(alerts)
+          .where(and(
+            eq(alerts.entityType, 'equipment'),
+            eq(alerts.entityId, id),
+            eq(alerts.status, 'open')
+          ))
+          .orderBy(desc(alerts.createdAt))
+          .limit(10),
+        db
+          .select({
+            record: maintenanceRecords,
+            technician: users,
+          })
+          .from(maintenanceRecords)
+          .leftJoin(users, eq(maintenanceRecords.technicianId, users.id))
+          .where(eq(maintenanceRecords.equipmentId, id))
+          .orderBy(desc(maintenanceRecords.createdAt))
+          .limit(10),
+      ]);
+
+      res.json({
+        ...equipmentData.equipment,
+        facility: equipmentData.facility,
+        alerts: activeAlerts,
+        maintenanceRecords: recentMaintenanceRecords.map(r => ({
+          ...r.record,
+          technician: r.technician,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching equipment details:", error);
+      res.status(500).json({ message: "Failed to fetch equipment details" });
+    }
+  });
+
   // ============================================
   // Contract routes
   // ============================================
