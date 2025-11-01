@@ -16,9 +16,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText, QrCode, LayoutGrid, LayoutList } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
+import { QRCodeSVG } from "qrcode.react";
 import type { Equipment, Contract, Facility, Location, EquipmentStatus, EquipmentCriticality, MaintenanceRecord } from "@shared/schema";
 import { insertEquipmentSchema, insertContractSchema, insertLocationSchema, type InsertEquipment, type InsertContract, type InsertLocation } from "@shared/schema";
 import { z } from "zod";
@@ -61,6 +62,19 @@ function CriticalityBadge({ criticality }: { criticality: string | null }) {
   };
   const config = variants[criticality] || variants["Medium"];
   return <Badge variant={config.variant} className={config.className} data-testid={`badge-criticality-${criticality.toLowerCase()}`}>{criticality}</Badge>;
+}
+
+// Helper component: Condition Badge with color coding
+function ConditionBadge({ condition }: { condition: string | null }) {
+  if (!condition) return null;
+  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline", className: string }> = {
+    "Excellent": { variant: "outline", className: "border-green-600 text-green-700 dark:text-green-400" },
+    "Good": { variant: "outline", className: "border-blue-600 text-blue-700 dark:text-blue-400" },
+    "Needs Repair": { variant: "secondary", className: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200" },
+    "Critical": { variant: "destructive", className: "" },
+  };
+  const config = variants[condition] || variants["Good"];
+  return <Badge variant={config.variant} className={config.className} data-testid={`badge-condition-${condition.toLowerCase().replace(" ", "-")}`}>{condition}</Badge>;
 }
 
 // Helper component: Info Item for displaying label-value pairs
@@ -1085,6 +1099,12 @@ export default function EquipmentPage() {
                     {selectedEquipment.criticality && (
                       <InfoItem label="Criticality" value={<CriticalityBadge criticality={selectedEquipment.criticality} />} icon={AlertTriangle} />
                     )}
+                    {selectedEquipment.condition && (
+                      <InfoItem label="Condition" value={<ConditionBadge condition={selectedEquipment.condition} />} testId="text-detail-condition" />
+                    )}
+                    {selectedEquipment.department && (
+                      <InfoItem label="Department" value={selectedEquipment.department} testId="text-detail-department" />
+                    )}
                     {selectedEquipment.installDate && (
                       <InfoItem label="Install Date" value={formatDate(new Date(selectedEquipment.installDate))} icon={Calendar} testId="text-detail-install-date" />
                     )}
@@ -1094,10 +1114,41 @@ export default function EquipmentPage() {
                     {selectedEquipment.warrantyExpiryDate && (
                       <InfoItem label="Warranty Expiry" value={formatDate(new Date(selectedEquipment.warrantyExpiryDate))} icon={Clock} testId="text-detail-warranty-expiry" />
                     )}
+                    {selectedEquipment.calibrationRequired && (
+                      <InfoItem label="Calibration Required" value="Yes" testId="text-detail-calibration-required" />
+                    )}
+                    {selectedEquipment.calibrationDate && (
+                      <InfoItem label="Last Calibration" value={formatDate(new Date(selectedEquipment.calibrationDate))} icon={Calendar} testId="text-detail-calibration-date" />
+                    )}
+                    {selectedEquipment.usageHours !== null && selectedEquipment.usageHours !== undefined && (
+                      <InfoItem label="Usage Hours" value={`${selectedEquipment.usageHours} hrs`} icon={Clock} testId="text-detail-usage-hours" />
+                    )}
                     {selectedEquipment.barcode && (
                       <InfoItem label="Barcode" value={selectedEquipment.barcode} testId="text-detail-barcode" />
                     )}
                   </div>
+
+                  {/* QR Code Section */}
+                  {selectedEquipment.equipmentId && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-foreground flex items-center gap-2">
+                        <QrCode className="w-4 h-4" />
+                        Equipment QR Code
+                      </h3>
+                      <Card className="p-6 flex items-center justify-center">
+                        <div className="text-center space-y-3">
+                          <QRCodeSVG 
+                            value={selectedEquipment.equipmentId} 
+                            size={128}
+                            level="H"
+                            includeMargin={true}
+                            data-testid="qr-code-equipment"
+                          />
+                          <p className="text-xs text-muted-foreground">Scan to view equipment details</p>
+                        </div>
+                      </Card>
+                    </div>
+                  )}
 
                   {/* Service Contracts */}
                   {contracts && getEquipmentContracts(selectedEquipment.id).length > 0 && (
