@@ -635,6 +635,20 @@ export default function EquipmentPage() {
                   />
                   <FormField
                     control={equipmentForm.control}
+                    name="imageUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Image URL</FormLabel>
+                        <FormControl>
+                          <Input type="url" placeholder="https://example.com/image.jpg" data-testid="input-image-url" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>Equipment photo or image URL</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={equipmentForm.control}
                     name="notes"
                     render={({ field }) => (
                       <FormItem>
