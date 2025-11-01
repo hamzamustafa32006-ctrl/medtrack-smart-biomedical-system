@@ -12,6 +12,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { useAlertNotifications } from "@/hooks/use-alert-notifications.tsx";
 import Landing from "@/pages/landing";
 import Home from "@/pages/home";
+import Dashboard from "@/pages/dashboard";
 import Alerts from "@/pages/alerts";
 import Tasks from "@/pages/tasks";
 import Facilities from "@/pages/facilities";
@@ -34,6 +35,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/alerts" component={Alerts} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/facilities" component={Facilities} />

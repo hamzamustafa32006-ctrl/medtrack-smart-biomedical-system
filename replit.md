@@ -12,8 +12,16 @@ Preferred communication style: Simple, everyday language.
 - **Framework & Build System**: React with TypeScript, Vite for fast HMR and optimized builds, Wouter for lightweight client-side routing.
 - **UI Design System**: shadcn/ui built on Radix UI, custom professional minimalist design with Primary Blue (#0057B7) and Accent Orange (#FF6D00), Tailwind CSS, Inter/Roboto fonts, responsive mobile-first design with dedicated bottom navigation.
 - **State Management**: TanStack Query for server state, React Hook Form with Zod for form validation, Context API for authentication.
-- **Navigation System**: Simplified 3-tier structure (Main, More, User Area) for reduced cognitive load. Desktop uses a fixed sidebar (`AppSidebar`), while mobile uses a fixed bottom navigation bar (`BottomNav`), both with active state highlighting.
+- **Navigation System**: Simplified 3-tier structure (Main, More, User Area) for reduced cognitive load. Desktop uses a fixed sidebar (`AppSidebar`), while mobile uses a fixed bottom navigation bar (`BottomNav`), both with active state highlighting. Main navigation includes Home, Analytics, Equipment, and Maintenance pages.
 - **Equipment Management Page**: Features free-text facility and location entry for flexibility, enhanced data tracking (e.g., `imageUrl`, `calibrationRequired`, `usageHours`, `department`), toggleable List (table) and Grid (card) views, Recharts-based data visualizations (Status/Condition distribution), color-coded badge system (Status, Criticality, Condition), search and filter functionalities. Equipment details are shown in a Sheet component with a tabbed interface (Overview, Maintenance & Alerts, Location & Facility, History) including QR code display for equipment ID. CRUD operations use queryClient for cache invalidation.
+- **Analytics Dashboard Page** (`/dashboard`): Real-time equipment analytics with synchronized filtering system. Features include:
+  - **Dynamic Filter Panel**: 4 filters (Maintenance Status, Equipment Status, Facility, Search) with 300ms debounced search
+  - **6 KPI Widgets**: Total Equipment, Active, Overdue, Critical, Under Maintenance, Due Soon (7 days)
+  - **3 Interactive Charts**: Equipment Status Distribution (pie), Maintenance Priority (pie), Equipment by Facility (bar)
+  - **Equipment Table**: Filtered results with Name, ID, Status, Priority, Next Due Date, Facility columns
+  - **Auto-Synchronization**: All widgets, charts, and table update instantly when filters change
+  - **Memoized Calculations**: Performance-optimized with useMemo for metrics and chart data
+  - Uses `/api/equipment/status` endpoint for filtered data with pagination support
 
 ### Backend Architecture
 - **Framework & Runtime**: Express.js with Node.js and TypeScript.

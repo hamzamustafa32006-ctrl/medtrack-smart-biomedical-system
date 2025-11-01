@@ -14,10 +14,11 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal } from "lucide-react";
+import { Home, AlertTriangle, ClipboardList, History, Settings, Building2, CheckSquare, Bell, ChevronDown, User, MoreHorizontal, BarChart3 } from "lucide-react";
 
 const mainNavItems = [
-  { path: "/", icon: Home, label: "Dashboard", testId: "link-dashboard-main" },
+  { path: "/", icon: Home, label: "Home", testId: "link-home-main" },
+  { path: "/dashboard", icon: BarChart3, label: "Analytics", testId: "link-analytics-main" },
   { path: "/equipment", icon: ClipboardList, label: "Equipment", testId: "link-equipment-main" },
   { path: "/tasks", icon: CheckSquare, label: "Maintenance", testId: "link-maintenance-main" },
 ];
