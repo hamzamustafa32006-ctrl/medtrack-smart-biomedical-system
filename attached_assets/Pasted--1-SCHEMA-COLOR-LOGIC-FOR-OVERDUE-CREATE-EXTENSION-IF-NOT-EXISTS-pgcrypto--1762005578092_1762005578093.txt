@@ -1,0 +1,86 @@
+-- ===== 1) SCHEMA & COLOR LOGIC FOR OVERDUE =====
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- حقول جديدة مع قيم افتراضية
+ALTER TABLE equipment
+  ADD COLUMN IF NOT EXISTS criticality TEXT DEFAULT 'Medium',          -- Low/Medium/High
+  ADD COLUMN IF NOT EXISTS condition    TEXT DEFAULT 'Good',            -- Good/Fair/Poor
+  ADD COLUMN IF NOT EXISTS priority     TEXT DEFAULT 'Normal',          -- Normal/Urgent
+  ADD COLUMN IF NOT EXISTS risk_score   INT  DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS status_color TEXT DEFAULT 'green',           -- green/orange/red
+  ADD COLUMN IF NOT EXISTS last_check   TIMESTAMP DEFAULT now();
+
+-- حقلين مشتقين نخزنهم لتسهيل العرض
+ALTER TABLE equipment
+  ADD COLUMN IF NOT EXISTS days_overdue INT,
+  ADD COLUMN IF NOT EXISTS is_overdue   BOOLEAN;
+
+-- تحديث القيم حسب التواريخ الحالية
+UPDATE equipment
+SET
+  days_overdue = GREATEST((CURRENT_DATE - next_due_date)::int, 0),
+  is_overdue   = (next_due_date < CURRENT_DATE),
+  status_color = CASE
+                   WHEN next_due_date < CURRENT_DATE - INTERVAL '30 days' THEN 'red'      -- متأخر أكثر من 30 يوم
+                   WHEN next_due_date < CURRENT_DATE THEN 'orange'                        -- متأخر 1-30 يوم
+                   WHEN next_due_date <= CURRENT_DATE + INTERVAL '7 days' THEN 'orange'   -- قرب موعده خلال أسبوع
+                   ELSE 'green'
+                 END,
+  priority     = CASE
+                   WHEN next_due_date < CURRENT_DATE THEN 'Urgent'
+                   ELSE 'Normal'
+                 END,
+  criticality  = CASE
+                   WHEN type ILIKE '%Life Support%' OR department ILIKE '%ICU%' THEN 'High'
+                   WHEN department ILIKE '%ER%' OR department ILIKE '%OR%' THEN 'High'
+                   WHEN department ILIKE '%Radiology%' THEN 'Medium'
+                   ELSE 'Low'
+                 END;
+
+-- (اختياري) إضافة 5 أجهزة جديدة كلها متأخرة لتجربة الألوان
+WITH fac AS (SELECT id FROM facilities WHERE code='ASU-HOSP'),
+loc AS (SELECT code, id FROM locations)
+INSERT INTO equipment (
+  id, user_id, name, equipment_id, type, department, manufacturer, model, serial_number,
+  maintenance_freq_days, last_maintenance_date, next_due_date, status,
+  facility_id, location_id, notes, condition, risk_score
+) VALUES
+(gen_random_uuid()::text,'seed','Portable Ventilator','EQ-201','Life Support','ER','Hamilton','T1','PV-201',
+ 60, CURRENT_DATE-120, CURRENT_DATE-45, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='ER-TR1'),'ER transport vent','Fair',70),
+(gen_random_uuid()::text,'seed','OR Diathermy Unit','EQ-202','Surgical','OR','Erbe','VIO 200','ESU-202',
+ 180, CURRENT_DATE-300, CURRENT_DATE-80, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='OR-2'),'Electrosurgery unit','Poor',85),
+(gen_random_uuid()::text,'seed','Chemistry Analyzer (Backup)','EQ-203','Laboratory','Lab','Roche','Cobas c311','CHEM-203',
+ 90, CURRENT_DATE-130, CURRENT_DATE-15, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='LAB-HEM'),'Backup analyzer','Fair',50),
+(gen_random_uuid()::text,'seed','Physio Ultrasound Therapy','EQ-204','Therapy','Physiotherapy','Chattanooga','Intelect','PHY-US-204',
+ 180, CURRENT_DATE-220, CURRENT_DATE-25, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='PHY-THER'),'Therapy ultrasound','Fair',40),
+(gen_random_uuid()::text,'seed','NICU Phototherapy Lamp','EQ-205','Neonatal','NICU','GE','BiliSoft','NICU-205',
+ 180, CURRENT_DATE-210, CURRENT_DATE-5, 'Active',
+ (SELECT id FROM fac),(SELECT id FROM loc WHERE code='NICU-4'),'Phototherapy for neonates','Good',35)
+ON CONFLICT (equipment_id) DO NOTHING;
+
+-- إعادة حساب الألوان للأجهزة المضافة الآن
+UPDATE equipment
+SET
+  days_overdue = GREATEST((CURRENT_DATE - next_due_date)::int, 0),
+  is_overdue   = (next_due_date < CURRENT_DATE),
+  status_color = CASE
+                   WHEN next_due_date < CURRENT_DATE - INTERVAL '30 days' THEN 'red'
+                   WHEN next_due_date < CURRENT_DATE THEN 'orange'
+                   WHEN next_due_date <= CURRENT_DATE + INTERVAL '7 days' THEN 'orange'
+                   ELSE 'green'
+                 END;
+
+-- ملخّص مجمّع لعدادات الألوان (View) — سهل على الـ API
+CREATE OR REPLACE VIEW equipment_color_summary AS
+SELECT
+  COUNT(*)::int                                         AS total,
+  SUM(CASE WHEN status_color='red'    THEN 1 ELSE 0 END)::int AS red,
+  SUM(CASE WHEN status_color='orange' THEN 1 ELSE 0 END)::int AS orange,
+  SUM(CASE WHEN status_color='green'  THEN 1 ELSE 0 END)::int AS green,
+  SUM(CASE WHEN is_overdue THEN 1 ELSE 0 END)::int           AS overdue
+FROM equipment;
+-- ===== END SQL =====
