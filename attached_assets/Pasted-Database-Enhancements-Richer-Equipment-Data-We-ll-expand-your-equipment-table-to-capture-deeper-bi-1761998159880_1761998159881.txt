@@ -1,0 +1,171 @@
+Database Enhancements — Richer Equipment Data
+We’ll expand your equipment table to capture deeper biomedical and operational details, so the system knows exactly what each device is, how it’s used, and when it’s due for maintenance.
+🔹 Updated Equipment Schema
+ALTER TABLE equipment
+ADD COLUMN manufacturer TEXT,
+ADD COLUMN model TEXT,
+ADD COLUMN serial_number TEXT,
+ADD COLUMN department TEXT,
+ADD COLUMN vendor_name TEXT,
+ADD COLUMN vendor_contact TEXT,
+ADD COLUMN purchase_date DATE,
+ADD COLUMN warranty_expiry DATE,
+ADD COLUMN maintenance_frequency_days INT DEFAULT 180,
+ADD COLUMN calibration_required BOOLEAN DEFAULT FALSE,
+ADD COLUMN calibration_date DATE,
+ADD COLUMN last_maintenance_date DATE,
+ADD COLUMN next_due_date DATE,
+ADD COLUMN condition TEXT CHECK (condition IN ('Excellent','Good','Needs Repair','Critical')) DEFAULT 'Good',
+ADD COLUMN usage_hours INT DEFAULT 0,
+ADD COLUMN status TEXT CHECK (status IN ('Active','Under Maintenance','Decommissioned','Pending Inspection')) DEFAULT 'Active';
+💡 This captures operational, warranty, and vendor data all in one record — essential for hospital compliance.
+🔹 Optional Supporting Tables
+To ensure relational data integrity:
+CREATE TABLE vendors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  contact_email TEXT,
+  phone TEXT
+);
+
+CREATE TABLE departments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  facility_id UUID REFERENCES facilities(id)
+);
+⚙️ 2. Automation Logic — Auto-Status Updates & Smart Tracking
+Here’s where your system becomes intelligent 👇
+✅ A. Daily Maintenance Status Automation
+Automatically change the status of each equipment based on maintenance due dates or alerts.
+Example (Node.js cron job, 2 AM daily)
+import cron from 'node-cron';
+import db from './db.js';
+import dayjs from 'dayjs';
+
+cron.schedule('0 2 * * *', async () => {
+  const today = dayjs().format('YYYY-MM-DD');
+
+  // Fetch all equipment with active schedules
+  const { rows: eqs } = await db.query(`
+    SELECT id, next_due_date, status
+    FROM equipment
+    WHERE status != 'Decommissioned' AND next_due_date IS NOT NULL
+  `);
+
+  for (const e of eqs) {
+    const daysLeft = dayjs(e.next_due_date).diff(today, 'day');
+
+    let newStatus;
+    if (daysLeft <= 0) newStatus = 'Under Maintenance';
+    else if (daysLeft <= 7) newStatus = 'Pending Inspection';
+    else newStatus = 'Active';
+
+    if (newStatus !== e.status) {
+      await db.query(`UPDATE equipment SET status=$1 WHERE id=$2`, [newStatus, e.id]);
+    }
+  }
+});
+✅ Automatically switches:
+“Active” → “Pending Inspection” → “Under Maintenance” → back to “Active” once resolved
+Keeps equipment list always up to date
+✅ B. Automated next_due_date Rolling
+When a technician marks maintenance complete:
+UPDATE equipment
+SET
+  last_maintenance_date = CURRENT_DATE,
+  next_due_date = CURRENT_DATE + (maintenance_frequency_days || ' days')::interval,
+  status = 'Active'
+WHERE id = $1;
+This creates continuous maintenance scheduling without manual date entry.
+✅ C. Condition Monitoring (Optional Upgrade)
+If you later integrate IoT sensors or manual readings (e.g., pressure, voltage, or calibration logs), you can auto-update condition:
+UPDATE equipment
+SET condition = CASE
+  WHEN usage_hours > 1000 THEN 'Needs Repair'
+  WHEN calibration_required AND calibration_date < CURRENT_DATE - INTERVAL '365 days' THEN 'Critical'
+  ELSE 'Good'
+END
+WHERE status = 'Active';
+🌐 3. API Layer — Smarter Data Endpoints
+Your REST endpoints should expose this richer data and update logic dynamically.
+Example Routes
+Method	Endpoint	Description
+GET /equipment	List all with filters (facility, department, status)	
+GET /equipment/:id	Full details (vendor, warranty, maintenance)	
+PATCH /equipment/:id/status	Update status (auto-triggered or manual)	
+POST /equipment/:id/complete-maintenance	Marks maintenance complete and rolls next_due_date	
+GET /equipment/summary	Aggregated stats (total, active, overdue, under maintenance)	
+Example Response (GET /equipment/:id)
+{
+  "id": "eq-102",
+  "name": "Ventilator V900",
+  "type": "Life Support",
+  "manufacturer": "GE Healthcare",
+  "model": "V900",
+  "serial_number": "V900-2345",
+  "department": "ICU",
+  "facility_name": "AASU Hospital",
+  "status": "Pending Inspection",
+  "condition": "Good",
+  "last_maintenance_date": "2025-09-01",
+  "next_due_date": "2025-11-05",
+  "vendor_name": "MediTech Co.",
+  "warranty_expiry": "2026-12-31",
+  "usage_hours": 760,
+  "maintenance_frequency_days": 60
+}
+🖥️ 4. Frontend — Smarter Equipment Dashboard
+Once backend automation is live, your UI can reflect statuses in real-time, giving engineers instant visibility.
+✅ A. Equipment Table with Dynamic Status & Filters
+Name	Facility	Department	Status	Condition	Next Maintenance
+Ventilator V900	AASU Hospital	ICU	🟡 Pending Inspection	Good	Nov 5
+X-Ray XR210	Radiology	Radiology	🔴 Under Maintenance	Needs Repair	Nov 2
+Color Coding:
+🟢 Active
+🟡 Pending Inspection
+🔴 Under Maintenance
+⚫ Decommissioned
+✅ B. Status Badges + Automated Icons
+<StatusBadge status={equipment.status} />
+<ConditionChip level={equipment.condition} />
+💡 Use subtle motion (Framer Motion) when a device changes state to catch user attention.
+✅ C. Detailed View with Historical Trends
+Drawer view includes:
+Maintenance timeline (past + future)
+Warranty & vendor details
+QR code for mobile access
+Usage hour graph over time (using Recharts)
+✅ D. Alerts Integration
+Combine with your existing alert system:
+Overdue → auto-creates critical alerts
+Condition = “Critical” → triggers escalation
+Example:
+if (equipment.status === 'Under Maintenance') {
+  showAlert({
+    title: `${equipment.name} requires urgent service`,
+    severity: 'Critical',
+  });
+}
+📊 5. Dashboard Summary Enhancements
+Add summary cards and charts at top of your Equipment Page:
+Metric	Example
+🧰 Total Equipment	128
+⚠️ Pending Inspection	12
+🔧 Under Maintenance	5
+🏥 Active Facilities	3
+📈 Average Uptime	98%
+Use Recharts or Chart.js for visualization:
+<PieChart data={statusSummary} />
+✅ 6. Acceptance Criteria
+Feature	Description
+🧱 Rich equipment schema	Manufacturer, vendor, warranty, department, condition
+🔄 Automatic status updates	Status changes based on due date
+🧠 Auto schedule rolling	Next maintenance auto-calculated
+📊 Dashboard	Real-time display of equipment state
+🔔 Alert link	Critical/overdue items auto-generate alerts
+📱 Mobile-friendly	Card & table views supported
+🚀 Optional Future Upgrade
+Once this is stable, you can later add:
+Predictive maintenance (AI) → forecast failures
+Integration with IoT → live equipment health readings
+Technician workload tracking → time spent per maintenance cycle

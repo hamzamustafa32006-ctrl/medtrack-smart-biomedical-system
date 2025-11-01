@@ -166,6 +166,10 @@ export type EquipmentStatus = z.infer<typeof equipmentStatusEnum>;
 export const equipmentCriticalityEnum = z.enum(["Low", "Medium", "High"]);
 export type EquipmentCriticality = z.infer<typeof equipmentCriticalityEnum>;
 
+// Equipment condition enum
+export const equipmentConditionEnum = z.enum(["Excellent", "Good", "Needs Repair", "Critical"]);
+export type EquipmentCondition = z.infer<typeof equipmentConditionEnum>;
+
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id")
@@ -190,6 +194,15 @@ export const equipment = pgTable("equipment", {
   maintenanceFrequencyDays: integer("maintenance_frequency_days"), // How often maintenance is needed
   lastMaintenanceDate: timestamp("last_maintenance_date"),
   nextDueDate: timestamp("next_due_date"), // Next maintenance due date (can be computed or manually set)
+  
+  // Additional biomedical tracking fields
+  imageUrl: varchar("image_url", { length: 500 }), // Equipment photo or uploaded image
+  calibrationRequired: boolean("calibration_required").default(false), // Whether equipment requires calibration
+  calibrationDate: timestamp("calibration_date"), // Last calibration date
+  condition: varchar("condition", { length: 50 }).default("Good"), // Excellent, Good, Needs Repair, Critical
+  usageHours: integer("usage_hours").default(0), // Track equipment usage hours
+  department: varchar("department", { length: 255 }), // Department/unit (e.g., ICU, Radiology, Surgery)
+  
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -231,6 +244,7 @@ export const insertEquipmentSchema = createInsertSchema(equipment).omit({
 }).extend({
   status: equipmentStatusEnum.optional(),
   criticality: equipmentCriticalityEnum.optional(),
+  condition: equipmentConditionEnum.optional(),
 });
 
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
