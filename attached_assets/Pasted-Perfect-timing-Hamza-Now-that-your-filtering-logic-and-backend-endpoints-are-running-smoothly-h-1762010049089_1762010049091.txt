@@ -1,0 +1,204 @@
+Perfect timing, Hamza 🚀
+Now that your filtering logic and backend endpoints are running smoothly, here’s how to add robust, production-grade equipment filtering and searching capabilities throughout your app — turning it into a powerful tool for engineers, admins, and analytics users alike.
+
+⸻
+
+🧭 1. Objectives
+
+Enhance your app so that users can:
+	•	Dynamically filter equipment by maintenance status, facility, department, and criticality
+	•	Perform real-time text search across equipment name, model, and serial number
+	•	Combine filters seamlessly (status + facility + search term, etc.)
+	•	View instant, paginated, and debounced results for smooth UX
+
+⸻
+
+🧱 2. Backend: Enhanced Query Logic (Node.js + PostgreSQL)
+
+Your endpoint can be extended to support multiple filters simultaneously and return paginated results.
+
+app.get('/equipment', async (req, res) => {
+  const { status, search, facility, department, criticality, limit = 20, offset = 0 } = req.query;
+  let query = `
+    SELECT e.*, f.name AS facility_name
+    FROM equipment e
+    LEFT JOIN facilities f ON e.facility_id = f.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (status) {
+    params.push(status);
+    query += ` AND e.status = $${params.length}`;
+  }
+
+  if (facility) {
+    params.push(facility);
+    query += ` AND e.facility_id = $${params.length}`;
+  }
+
+  if (department) {
+    params.push(department);
+    query += ` AND e.department = $${params.length}`;
+  }
+
+  if (criticality) {
+    params.push(criticality);
+    query += ` AND e.criticality = $${params.length}`;
+  }
+
+  if (search) {
+    params.push(`%${search.toLowerCase()}%`);
+    query += ` AND (LOWER(e.name) LIKE $${params.length}
+                    OR LOWER(e.model) LIKE $${params.length}
+                    OR LOWER(e.serial_number) LIKE $${params.length}
+                    OR LOWER(f.name) LIKE $${params.length})`;
+  }
+
+  query += ` ORDER BY e.name ASC LIMIT ${limit} OFFSET ${offset}`;
+
+  try {
+    const { rows } = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error filtering equipment:', err);
+    res.status(500).json({ error: 'Failed to retrieve equipment data.' });
+  }
+});
+
+✅ Supports multi-criteria filtering
+✅ Prevents SQL injection via parameterized queries
+✅ Scales easily with pagination
+
+⸻
+
+⚙️ 3. Frontend: Unified Filter + Search Component
+
+A flexible, reusable filter panel to drop into any view (Dashboard, Calendar, Equipment list, etc.).
+
+import { useEffect, useState } from 'react';
+
+export default function EquipmentFilterPanel({ onResults }) {
+  const [status, setStatus] = useState('');
+  const [facility, setFacility] = useState('');
+  const [search, setSearch] = useState('');
+  const [criticality, setCriticality] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchFilteredData = async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (facility) params.append('facility', facility);
+    if (criticality) params.append('criticality', criticality);
+    if (search) params.append('search', search);
+
+    try {
+      const res = await fetch(`/equipment?${params.toString()}`);
+      const data = await res.json();
+      onResults(data);
+    } catch (error) {
+      console.error('Error loading equipment:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-refresh on filter change (debounced)
+  useEffect(() => {
+    const timer = setTimeout(fetchFilteredData, 300);
+    return () => clearTimeout(timer);
+  }, [status, facility, criticality, search]);
+
+  return (
+    <div className="flex flex-wrap gap-3 items-center mb-4">
+      <select value={status} onChange={(e) => setStatus(e.target.value)} className="border rounded-md px-3 py-2">
+        <option value="">All Statuses</option>
+        <option value="Active">Active</option>
+        <option value="Pending Inspection">Pending Inspection</option>
+        <option value="Under Maintenance">Under Maintenance</option>
+        <option value="Decommissioned">Decommissioned</option>
+      </select>
+
+      <select value={facility} onChange={(e) => setFacility(e.target.value)} className="border rounded-md px-3 py-2">
+        <option value="">All Facilities</option>
+        <option value="aasu-hospital">AASU Hospital</option>
+        <option value="med-lab">Medical Lab</option>
+      </select>
+
+      <select value={criticality} onChange={(e) => setCriticality(e.target.value)} className="border rounded-md px-3 py-2">
+        <option value="">All Criticalities</option>
+        <option value="High">High</option>
+        <option value="Medium">Medium</option>
+        <option value="Low">Low</option>
+      </select>
+
+      <input
+        type="text"
+        placeholder="Search by name or serial..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="border rounded-md px-3 py-2 w-64"
+      />
+
+      <button
+        onClick={fetchFilteredData}
+        disabled={loading}
+        className={`px-4 py-2 rounded-md text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+      >
+        {loading ? 'Loading...' : 'Apply'}
+      </button>
+    </div>
+  );
+}
+
+✅ Real-time updates (debounced)
+✅ Combines filters & search cleanly
+✅ Integrates directly with your backend
+
+⸻
+
+📊 4. Dashboard + Analytics Integration
+
+Once this filter is in place, you can:
+	•	Feed the filtered dataset directly into your real-time analytics widgets
+	•	Filter the calendar view to show maintenance events by status
+	•	Show counts in KPI cards (e.g., “🔧 12 Under Maintenance”)
+
+<EquipmentFilterPanel onResults={setFilteredEquipment} />
+<EquipmentTable data={filteredEquipment} />
+<DashboardCards data={filteredEquipment} />
+
+
+⸻
+
+🔍 5. Optional: Local Cache & Persistence
+
+Keep last-used filters across sessions:
+
+useEffect(() => {
+  localStorage.setItem('equipmentFilters', JSON.stringify({ status, facility, search }));
+}, [status, facility, search]);
+
+useEffect(() => {
+  const saved = JSON.parse(localStorage.getItem('equipmentFilters') || '{}');
+  if (saved) {
+    setStatus(saved.status || '');
+    setFacility(saved.facility || '');
+    setSearch(saved.search || '');
+  }
+}, []);
+
+
+⸻
+
+✅ 6. Acceptance Criteria
+	•	Filter by multiple fields (status, facility, criticality)
+	•	Search text matches name/model/serial/facility
+	•	Debounced for smooth UX
+	•	Works on dashboard, calendar, and equipment pages
+	•	Integrates directly with analytics and live updates
+
+⸻
+
+Would you like me to help you wire this filtering panel into your existing dashboard layout, so that when you filter, it automatically updates both your equipment table and real-time analytics widgets in one synchronized view?
