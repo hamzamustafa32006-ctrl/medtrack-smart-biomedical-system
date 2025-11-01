@@ -1,0 +1,75 @@
+Example Integration with Equipment Table
+import { useState } from "react";
+import EquipmentFilter from "./EquipmentFilter";
+
+export default function EquipmentPage() {
+  const [equipment, setEquipment] = useState([]);
+
+  return (
+    <div className="p-6">
+      <h1 className="text-xl font-semibold mb-4">Equipment Management</h1>
+
+      {/* Filter + Search Component */}
+      <EquipmentFilter onResults={setEquipment} />
+
+      {/* Results Table */}
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="bg-gray-100 text-left">
+            <th className="p-3">Name</th>
+            <th className="p-3">Model</th>
+            <th className="p-3">Serial #</th>
+            <th className="p-3">Facility</th>
+            <th className="p-3">Status</th>
+            <th className="p-3">Next Maintenance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {equipment.map((item) => (
+            <tr key={item.id} className="border-b hover:bg-gray-50">
+              <td className="p-3">{item.name}</td>
+              <td className="p-3">{item.model}</td>
+              <td className="p-3">{item.serial_number}</td>
+              <td className="p-3">{item.facility_name}</td>
+              <td className="p-3">
+                <StatusBadge status={item.status} />
+              </td>
+              <td className="p-3">{item.next_due_date}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Small status badge UI
+function StatusBadge({ status }) {
+  const color =
+    status === "Active"
+      ? "bg-green-100 text-green-700"
+      : status === "Under Maintenance"
+      ? "bg-red-100 text-red-700"
+      : status === "Pending Inspection"
+      ? "bg-yellow-100 text-yellow-700"
+      : "bg-gray-100 text-gray-600";
+  return <span className={`px-2 py-1 rounded-md text-xs ${color}`}>{status}</span>;
+}
+🧠 4. UX Enhancements
+Improvement	Description
+🔍 Live search	Debounce input (search updates automatically after typing stops)
+⚙️ Persistent filters	Save last-used filters to localStorage
+🧾 Pagination	Add optional ?limit and ?offset parameters
+🏥 Facility filter	Add dropdown of facilities for multi-site management
+🕒 Quick tabs	Add quick tabs for “All”, “Active”, “Under Maintenance”, etc.
+📊 5. Dashboard Integration Option
+You can use the same component in your main dashboard or calendar like this:
+<EquipmentFilter onResults={(data) => setFilteredEquipment(data)} />
+<MaintenanceCalendar equipment={filteredEquipment} />
+That way, your calendar automatically updates when users filter or search for equipment — perfect for real-time maintenance tracking.
+✅ 6. Acceptance Criteria
+ Filter equipment by maintenance status
+ Search by name/model/serial/facility
+ Works with existing /equipment API
+ Integrates seamlessly with dashboard and calendar
+ Updates results dynamically

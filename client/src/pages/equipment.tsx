@@ -100,6 +100,7 @@ export default function EquipmentPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [facilityFilter, setFacilityFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [maintenanceStatusFilter, setMaintenanceStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
@@ -276,7 +277,29 @@ export default function EquipmentPage() {
       const matchesFacility = facilityFilter === "all" || equip.facilityId === facilityFilter;
       const matchesStatus = statusFilter === "all" || equip.status === statusFilter;
 
-      return matchesSearch && matchesFacility && matchesStatus;
+      // Maintenance status filter
+      let matchesMaintenanceStatus = true;
+      if (maintenanceStatusFilter !== "all") {
+        const today = new Date();
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(today.getDate() + 7);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(today.getDate() - 7);
+
+        if (maintenanceStatusFilter === "overdue") {
+          matchesMaintenanceStatus = equip.isOverdue === true;
+        } else if (maintenanceStatusFilter === "upcoming") {
+          const nextDue = equip.nextDueDate ? new Date(equip.nextDueDate) : null;
+          matchesMaintenanceStatus = !equip.isOverdue && nextDue !== null && nextDue < sevenDaysFromNow;
+        } else if (maintenanceStatusFilter === "resolved") {
+          const lastMaintenance = equip.lastMaintenanceDate ? new Date(equip.lastMaintenanceDate) : null;
+          matchesMaintenanceStatus = lastMaintenance !== null && lastMaintenance >= sevenDaysAgo;
+        } else if (maintenanceStatusFilter === "critical") {
+          matchesMaintenanceStatus = equip.statusColor === "red";
+        }
+      }
+
+      return matchesSearch && matchesFacility && matchesStatus && matchesMaintenanceStatus;
     });
 
     // Only sort if a sort field is selected
@@ -326,7 +349,7 @@ export default function EquipmentPage() {
     }
 
     return filtered;
-  }, [equipment, facilities, searchQuery, facilityFilter, statusFilter, sortField, sortDirection]);
+  }, [equipment, facilities, searchQuery, facilityFilter, statusFilter, maintenanceStatusFilter, sortField, sortDirection]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -668,6 +691,18 @@ export default function EquipmentPage() {
                     <SelectItem value="Under Maintenance">Under Maintenance</SelectItem>
                     <SelectItem value="Decommissioned">Decommissioned</SelectItem>
                     <SelectItem value="Pending Installation">Pending Installation</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={maintenanceStatusFilter} onValueChange={setMaintenanceStatusFilter}>
+                  <SelectTrigger className="w-full md:w-[200px]" data-testid="select-filter-maintenance-status">
+                    <SelectValue placeholder="Maintenance Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Equipment</SelectItem>
+                    <SelectItem value="overdue">🔴 Overdue</SelectItem>
+                    <SelectItem value="upcoming">⚠️ Due Soon (7 days)</SelectItem>
+                    <SelectItem value="resolved">✅ Recently Serviced</SelectItem>
+                    <SelectItem value="critical">🚨 Critical Priority</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
