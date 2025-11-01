@@ -13,7 +13,13 @@ Preferred communication style: Simple, everyday language.
 - **Frontend Hooks**: `useRole`, `useIsAdmin`, `useCurrentRole`, `useCanApproveMaintenance` for conditional UI rendering
 - **UI Components**: `RequireRole`, `AdminOnly`, `SupervisorOnly`, `RoleSwitch` for role-based content display
 - **Role Badge**: Header displays current user role with color coding (admin = primary blue)
-- **Backend Authorization**: Middleware (`requirePermission`, `requireRole`, `requireAdmin`) ready for API route protection
+- **Backend Authorization**: Middleware (`requirePermission`, `requireRole`, `requireAdmin`) **ENFORCED** on sensitive routes:
+  - PATCH/DELETE operations (vendors, facilities, locations, equipment, schedules) → `requirePermission('edit_all')`
+  - Maintenance record updates → `requirePermission('update_tasks')` (Technicians can update)
+  - Maintenance task updates → `requirePermission('update_tasks')` (Technicians can update)
+  - Schedule assignment → `requirePermission('edit_all')` (Admin/Supervisor only)
+  - Maintenance approval/completion (records & schedules) → `requirePermission('approve_maintenance')`
+  - All routes respect user roles: Admin/Supervisor can edit/approve/assign, Technicians can update, Viewers can only view
 - **Auto-Seeding**: Permissions automatically seeded on server startup (idempotent)
 - **Development Mode**: New users automatically assigned "admin" role for easier testing
 
@@ -23,6 +29,8 @@ Preferred communication style: Simple, everyday language.
 - **Duplicate Prevention**: Checks for existing open records before creating new ones
 - **Equipment Status Updates**: Automatically updates equipment status based on alerts and schedules
 - **User Scoping**: All generated records properly scoped to equipment owner's userId
+- **Daily Automation**: Cron job runs at midnight (Kuwait timezone) to auto-generate records for next 7 days
+- **Integration**: Part of unified daily scheduler (alerts → schedules → contracts → maintenance records)
 
 ## System Architecture
 

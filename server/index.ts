@@ -6,6 +6,7 @@ import { generateMaintenanceAlerts } from "./alertService";
 import { updateScheduleStatuses } from "./scheduleService";
 import { updateContractStatuses } from "./contractService";
 import { seedDefaultPermissions } from "./seedPermissions";
+import { db } from "./db";
 
 const app = express();
 
@@ -87,6 +88,12 @@ app.use((req, res, next) => {
       if (contractResult.errors.length > 0) {
         console.error('[SCHEDULER] Contract update errors:', contractResult.errors);
       }
+      
+      // Auto-generate maintenance records from schedules and alerts
+      log('[SCHEDULER] Starting automated maintenance record generation...');
+      const { rows } = await db.execute(`SELECT * FROM generate_maintenance_records(7)`);
+      const result = rows && rows.length > 0 ? rows[0] : { schedules_created: 0, alerts_created: 0, equipment_updated: 0 };
+      log(`[SCHEDULER] Maintenance record generation complete: ${result.schedules_created} from schedules, ${result.alerts_created} from alerts, ${result.equipment_updated} equipment updated`);
     } catch (error) {
       console.error('[SCHEDULER] Daily scheduler failed:', error);
     }
@@ -94,7 +101,7 @@ app.use((req, res, next) => {
     timezone: "Asia/Kuwait" // Run in Kuwait timezone
   });
 
-  log('[SCHEDULER] Daily maintenance scheduler initialized (equipment alerts, schedule updates & contract expiry at midnight Kuwait time)');
+  log('[SCHEDULER] Daily maintenance scheduler initialized (alerts, schedules, contracts & automated record generation at midnight Kuwait time)');
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -3,6 +3,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { requirePermission, requireRole, requireAdmin } from "./middleware/authorize";
 import {
   insertEquipmentSchema,
   insertEquipmentSchemaBase,
@@ -84,7 +85,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/vendors/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/vendors/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -105,7 +106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/vendors/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/vendors/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -155,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update equipment
-  app.patch("/api/equipment/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/equipment/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -362,7 +363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update maintenance record
-  app.patch("/api/maintenance-records/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/maintenance-records/:id", isAuthenticated, requirePermission('update_tasks'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -385,7 +386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Complete maintenance record (auto-resolves alerts, updates equipment)
-  app.patch("/api/maintenance-records/:id/complete", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/maintenance-records/:id/complete", isAuthenticated, requirePermission('approve_maintenance'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -455,7 +456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update facility
-  app.patch("/api/facilities/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/facilities/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -477,7 +478,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete facility
-  app.delete("/api/facilities/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/facilities/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -544,7 +545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update location
-  app.patch("/api/locations/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/locations/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -566,7 +567,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete location
-  app.delete("/api/locations/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/locations/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -659,7 +660,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update task (status, notes, checklist, assignment)
-  app.patch("/api/maintenance-tasks/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/maintenance-tasks/:id", isAuthenticated, requirePermission('update_tasks'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -829,7 +830,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/maintenance-schedules/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/maintenance-schedules/:id", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -850,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/maintenance-schedules/:id/complete", isAuthenticated, async (req: any, res) => {
+  app.post("/api/maintenance-schedules/:id/complete", isAuthenticated, requirePermission('approve_maintenance'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
@@ -868,7 +869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/maintenance-schedules/:id/assign", isAuthenticated, async (req: any, res) => {
+  app.post("/api/maintenance-schedules/:id/assign", isAuthenticated, requirePermission('edit_all'), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
