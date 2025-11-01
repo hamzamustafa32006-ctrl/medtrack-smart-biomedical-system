@@ -20,6 +20,7 @@ import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Buildi
 import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
 import { QRCodeSVG } from "qrcode.react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import type { Equipment, Contract, Facility, Location, EquipmentStatus, EquipmentCriticality, MaintenanceRecord } from "@shared/schema";
 import { insertEquipmentSchema, insertContractSchema, insertLocationSchema, type InsertEquipment, type InsertContract, type InsertLocation } from "@shared/schema";
 import { z } from "zod";
@@ -476,6 +477,87 @@ export default function EquipmentPage() {
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="value-locations">{locationsCount}</div>
                 <p className="text-xs text-muted-foreground">In use</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Equipment Visualizations */}
+        {!isLoading && equipment && equipment.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Equipment by Status</CardTitle>
+                <CardDescription>Distribution across all statuses</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={(() => {
+                        const statusCounts: Record<string, number> = {};
+                        equipment.forEach((eq) => {
+                          const status = eq.status || "Unknown";
+                          statusCounts[status] = (statusCounts[status] || 0) + 1;
+                        });
+                        return Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
+                      })()}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {(() => {
+                        const colors: Record<string, string> = {
+                          "Active": "#22c55e",
+                          "Under Maintenance": "#f59e0b",
+                          "Decommissioned": "#9ca3af",
+                          "Pending Installation": "#3b82f6",
+                        };
+                        const statusCounts: Record<string, number> = {};
+                        equipment.forEach((eq) => {
+                          const status = eq.status || "Unknown";
+                          statusCounts[status] = (statusCounts[status] || 0) + 1;
+                        });
+                        return Object.keys(statusCounts).map((status, index) => (
+                          <Cell key={`cell-${index}`} fill={colors[status] || "#9ca3af"} />
+                        ));
+                      })()}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Equipment by Condition</CardTitle>
+                <CardDescription>Condition distribution overview</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart
+                    data={(() => {
+                      const conditionCounts: Record<string, number> = {};
+                      equipment.forEach((eq) => {
+                        const condition = eq.condition || "Unknown";
+                        conditionCounts[condition] = (conditionCounts[condition] || 0) + 1;
+                      });
+                      return Object.entries(conditionCounts).map(([name, count]) => ({ name, count }));
+                    })()}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#0057B7" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
