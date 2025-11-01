@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText, QrCode, LayoutGrid, LayoutList, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Settings, Calendar, Clock, Package, Wrench, AlertTriangle, Building2, MapPin, Search, ArrowUpDown, ChevronDown, ChevronUp, FileText, QrCode, LayoutGrid, LayoutList, RefreshCw, CheckCircle2, XCircle, Camera } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { formatDate } from "@/lib/dateUtils";
 import { QRCodeSVG } from "qrcode.react";
@@ -1142,6 +1142,27 @@ export default function EquipmentPage() {
 
                 {/* Overview Tab */}
                 <TabsContent value="overview" className="space-y-6">
+                  {/* Equipment Image */}
+                  {selectedEquipment.imageUrl && (
+                    <Card className="p-4">
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Camera className="w-4 h-4" />
+                        Equipment Image
+                      </h3>
+                      <div className="flex justify-center">
+                        <img 
+                          src={selectedEquipment.imageUrl} 
+                          alt={selectedEquipment.name}
+                          className="max-w-full max-h-64 rounded-lg border object-contain"
+                          data-testid="img-equipment"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    </Card>
+                  )}
+
                   <div className="grid grid-cols-2 gap-6">
                     {selectedEquipment.equipmentId && (
                       <InfoItem label="Equipment ID" value={selectedEquipment.equipmentId} icon={FileText} testId="text-detail-equipment-id" />
@@ -1409,10 +1430,13 @@ export default function EquipmentPage() {
 
                 {/* History Tab */}
                 <TabsContent value="history" className="space-y-4">
-                  {/* Maintenance History Table */}
+                  {/* Maintenance History Timeline */}
                   <Card className="p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-semibold">Maintenance History</h3>
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Clock className="w-4 h-4" />
+                        Maintenance History Timeline
+                      </h3>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1424,60 +1448,73 @@ export default function EquipmentPage() {
                     </div>
                     
                     {equipmentDetails?.maintenanceRecords && equipmentDetails.maintenanceRecords.length > 0 ? (
-                      <div className="border rounded-lg overflow-hidden">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-xs">Date</TableHead>
-                              <TableHead className="text-xs">Type</TableHead>
-                              <TableHead className="text-xs">Status</TableHead>
-                              <TableHead className="text-xs">Technician</TableHead>
-                              <TableHead className="text-xs">Cost</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {equipmentDetails.maintenanceRecords.map((record: any) => (
-                              <TableRow key={record.id} className="hover-elevate">
-                                <TableCell className="text-sm">
-                                  {record.createdAt ? formatDate(new Date(record.createdAt)) : '—'}
-                                </TableCell>
-                                <TableCell className="text-sm">
+                      <div className="relative pl-6 space-y-4">
+                        {/* Timeline vertical line */}
+                        <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-border"></div>
+                        
+                        {equipmentDetails.maintenanceRecords.map((record: any, index: number) => (
+                          <div key={record.id} className="relative" data-testid={`timeline-record-${index}`}>
+                            {/* Timeline dot */}
+                            <div className={`absolute -left-6 top-2 w-3 h-3 rounded-full border-2 ${
+                              record.status === 'Completed' 
+                                ? 'bg-green-500 border-green-600' 
+                                : record.status === 'In Progress'
+                                ? 'bg-yellow-500 border-yellow-600'
+                                : 'bg-blue-500 border-blue-600'
+                            }`}></div>
+                            
+                            {/* Record content */}
+                            <div className="bg-card border rounded-lg p-3 hover-elevate">
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2">
                                   <Badge variant="outline" className="text-xs">
                                     {record.maintenanceType || 'General'}
                                   </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm">
                                   {record.status === 'Completed' ? (
                                     <div className="flex items-center gap-1 text-green-600">
                                       <CheckCircle2 className="w-3.5 h-3.5" />
-                                      <span className="text-xs">Completed</span>
+                                      <span className="text-xs font-medium">Completed</span>
                                     </div>
                                   ) : record.status === 'In Progress' ? (
-                                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 text-xs">
+                                    <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 text-xs">
                                       In Progress
                                     </Badge>
                                   ) : (
-                                    <Badge variant="outline" className="text-xs">
+                                    <Badge variant="secondary" className="text-xs">
                                       {record.status}
                                     </Badge>
                                   )}
-                                </TableCell>
-                                <TableCell className="text-sm">
-                                  {record.technician?.email ? (
-                                    <div>
-                                      <div className="font-medium">
-                                        {record.technician.email.split('@')[0]}
-                                      </div>
-                                    </div>
-                                  ) : '—'}
-                                </TableCell>
-                                <TableCell className="text-sm">
-                                  {record.cost ? `${record.cost} KWD` : '—'}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {record.createdAt ? formatDate(new Date(record.createdAt)) : '—'}
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-3 text-sm">
+                                {record.technician?.email && (
+                                  <div>
+                                    <span className="text-muted-foreground">Technician:</span>
+                                    <span className="ml-2 font-medium">
+                                      {record.technician.email.split('@')[0]}
+                                    </span>
+                                  </div>
+                                )}
+                                {record.cost && (
+                                  <div>
+                                    <span className="text-muted-foreground">Cost:</span>
+                                    <span className="ml-2 font-medium">{record.cost} KWD</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {record.description && (
+                                <div className="mt-2 text-xs text-muted-foreground border-t pt-2">
+                                  {record.description}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <div className="text-center py-8">

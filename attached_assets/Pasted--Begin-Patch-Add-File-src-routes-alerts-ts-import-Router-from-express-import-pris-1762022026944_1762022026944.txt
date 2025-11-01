@@ -1,0 +1,194 @@
+*** Begin Patch
+*** Add File: src/routes/alerts.ts
++import { Router } from 'express';
++import { prisma } from '../prisma';
++import { addDays, startOfWeek, endOfWeek } from 'date-fns';
++
++// نافذة الـ Upcoming شهر (تقدر تغيّرها من env)
++const UPCOMING_WINDOW_DAYS = Number(process.env.UPCOMING_WINDOW_DAYS || 30);
++// بداية الأسبوع السبت (6) بما يناسب الخليج؛ غيّرها إذا تبي الأحد=0
++const WEEK_STARTS_ON: 0|1|2|3|4|5|6 = Number(process.env.WEEK_STARTS_ON ?? 6) as any;
++
++const router = Router();
++
++/**
++ * تعريفات منطق العد:
++ * - Critical Alerts (أجهزة): أي جهاز alert_level ∈ {Urgent, Critical} أو حالته Overdue
++ * - Upcoming Maintenance (أجهزة): next_due_date بين الآن و +UPCOMING_WINDOW_DAYS
++ * - Resolved This Week (أجهزة): أجهزة لها maintenance_record مكتمل داخل أسبوعنا الحالي
++ *
++ * أسماء الحقول القابلة للتعديل حسب سكيمتك:
++ * equipment: id, alert_level, status, next_due_date, is_active, deleted_at
++ * maintenance_record: id, equipment_id, status ('completed'), completed_at
++ */
++router.get('/summary', async (_req, res) => {
++  try {
++    const now = new Date();
++    const upcomingTo = addDays(now, UPCOMING_WINDOW_DAYS);
++    const weekStart = startOfWeek(now, { weekStartsOn: WEEK_STARTS_ON });
++    const weekEnd   = endOfWeek(now,   { weekStartsOn: WEEK_STARTS_ON });
++
++    // 1) Critical (أجهزة)
++    const critical = await prisma.equipment.count({
++      where: {
++        // لا تعد الأجهزة المحذوفة/المتقاعدة إن وجدت لديك مثل هذه الحقول
++        deleted_at: null,
++        // active/operational إن كان عندك فلتر مماثل
++        // is_active: true,
++        OR: [
++          { alert_level: { in: ['Urgent', 'Critical'] } },
++          { status: 'overdue' },
++          { next_due_date: { lt: now } }, // احتياط لو ما تستخدم status=overdue
++        ],
++      },
++    });
++
++    // 2) Upcoming (أجهزة خلال شهر)
++    const upcoming = await prisma.equipment.count({
++      where: {
++        deleted_at: null,
++        // is_active: true,
++        next_due_date: { gte: now, lte: upcomingTo },
++        // غير مكتملة/ما تزال بحاجة صيانة (اختياري)
++        // status: { not: 'completed' },
++      },
++    });
++
++    // 3) Resolved This Week (أجهزة لها قيود صيانة اكتملت هذا الأسبوع)
++    const resolvedThisWeekRaw = await prisma.maintenance_record.findMany({
++      where: {
++        status: 'completed',
++        completed_at: { gte: weekStart, lte: weekEnd },
++      },
++      select: { equipment_id: true },
++    });
++    // مميز الأجهزة حتى لو أكثر من سجل لنفس الجهاز
++    const resolvedThisWeek = new Set(resolvedThisWeekRaw.map(r => r.equipment_id)).size;
++
++    res.json({ critical, upcoming, resolvedThisWeek });
++  } catch (err) {
++    console.error('GET /api/alerts/summary failed', err);
++    res.status(500).json({ error: 'FAILED_TO_COMPUTE_ALERT_SUMMARY' });
++  }
++});
++
++export default router;
++
+*** End Patch
+*** Begin Patch
+*** Update File: src/server.ts
+@@
+ import express from 'express';
++import alertsRouter from './routes/alerts';
+ 
+ const app = express();
+ 
+ // middlewares ...
+ 
++// اربط حماية الدور لو عندك RBAC قبل هذا السطر
++// مثال: app.use('/api/alerts', requireAuth(['admin','manager','technician']));
++app.use('/api/alerts', alertsRouter);
++
+ export { app };
+*** End Patch
+*** Add File: frontend/src/hooks/useAlertSummary.ts
++import { useEffect, useState } from 'react';
++
++export type AlertSummary = { critical: number; upcoming: number; resolvedThisWeek: number };
++
++export function useAlertSummary(refreshMs = 60000) {
++  const [data, setData] = useState<AlertSummary>({ critical: 0, upcoming: 0, resolvedThisWeek: 0 });
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<string | null>(null);
++
++  async function load() {
++    try {
++      setError(null);
++      const res = await fetch('/api/alerts/summary', { credentials: 'include' });
++      if (!res.ok) throw new Error(`HTTP ${res.status}`);
++      const json = await res.json();
++      setData(json);
++    } catch (e: any) {
++      setError(e?.message || 'failed');
++    } finally {
++      setLoading(false);
++    }
++  }
++
++  useEffect(() => {
++    let cancel = false;
++    load();
++    const id = setInterval(() => { if (!cancel) load(); }, refreshMs);
++    return () => { cancel = true; clearInterval(id); };
++  }, []);
++
++  return { data, loading, error, reload: load };
++}
++
+*** End Patch
+*** Add File: frontend/src/components/AlertSummaryCards.tsx
++import { useAlertSummary } from '../hooks/useAlertSummary';
++
++function Card({ title, value, className }: { title: string; value: number | string; className: string }) {
++  return (
++    <div className={`rounded-xl border p-4 ${className}`}>
++      <div className="text-sm text-gray-600">{title}</div>
++      <div className="mt-2 text-3xl font-semibold">{value}</div>
++    </div>
++  );
++}
++
++export default function AlertSummaryCards() {
++  const { data, loading } = useAlertSummary();
++  const v = (n: number) => (loading ? '—' : n);
++  return (
++    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
++      <Card title="Critical Alerts"      value={v(data.critical)}        className="border-red-300 bg-red-50" />
++      <Card title="Upcoming Maintenance" value={v(data.upcoming)}        className="border-gray-300 bg-gray-50" />
++      <Card title="Resolved This Week"   value={v(data.resolvedThisWeek)} className="border-green-300 bg-green-50" />
++    </div>
++  );
++}
++
+*** End Patch
+*** Update File: frontend/src/pages/Dashboard.tsx
+@@
+-import React from 'react';
++import React from 'react';
++import AlertSummaryCards from '../components/AlertSummaryCards';
+ 
+ export default function Dashboard() {
+   return (
+     <div className="space-y-6">
+       <h1 className="text-2xl font-semibold">Maintenance Alerts</h1>
+-      {/* بطاقات قديمة ثابتة */}
+-      <div className="grid grid-cols-3 gap-4">
+-        <div className="rounded-xl border p-4 border-red-300 bg-red-50">
+-          <div className="text-sm text-gray-600">Critical Alerts</div>
+-          <div className="mt-2 text-3xl font-semibold">0</div>
+-        </div>
+-        <div className="rounded-xl border p-4 border-gray-300 bg-gray-50">
+-          <div className="text-sm text-gray-600">Upcoming Maintenance</div>
+-          <div className="mt-2 text-3xl font-semibold">0</div>
+-        </div>
+-        <div className="rounded-xl border p-4 border-green-300 bg-green-50">
+-          <div className="text-sm text-gray-600">Resolved This Week</div>
+-          <div className="mt-2 text-3xl font-semibold">0</div>
+-        </div>
+-      </div>
++      {/* بطاقات حيّة من الداتابيس */}
++      <AlertSummaryCards />
+       {/* بقية الصفحة ... */}
+     </div>
+   );
+ }
+*** End Patch
+*** Update File: .env.example
+@@
+-# نافذة الـ Upcoming (بالأيام)
+-UPCOMING_WINDOW_DAYS=7
++# نافذة الـ Upcoming (بالأيام) — شهر
++UPCOMING_WINDOW_DAYS=30
++# بداية الأسبوع (0=الأحد .. 6=السبت)
++WEEK_STARTS_ON=6
+*** End Patch
