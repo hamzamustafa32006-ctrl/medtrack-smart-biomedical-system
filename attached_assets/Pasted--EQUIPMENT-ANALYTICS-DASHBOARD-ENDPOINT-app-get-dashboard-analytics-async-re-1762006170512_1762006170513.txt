@@ -1,0 +1,82 @@
+/* ====== EQUIPMENT ANALYTICS DASHBOARD ENDPOINT ====== */
+app.get('/dashboard/analytics', async (req, res) => {
+  try {
+    const stats = await db.one(`
+      SELECT
+        COUNT(*) AS total_devices,
+        COUNT(*) FILTER (WHERE is_overdue) AS overdue_devices,
+        COUNT(*) FILTER (WHERE status_color='red') AS critical_devices,
+        COUNT(*) FILTER (WHERE status_color='orange') AS upcoming_devices,
+        COUNT(*) FILTER (WHERE status_color='green') AS healthy_devices,
+        COUNT(*) FILTER (WHERE maintenance_status='resolved') AS resolved_devices
+      FROM equipment;
+    `);
+
+    res.json({
+      summary: {
+        total: stats.total_devices,
+        overdue: stats.overdue_devices,
+        critical: stats.critical_devices,
+        upcoming: stats.upcoming_devices,
+        healthy: stats.healthy_devices,
+        resolved: stats.resolved_devices
+      },
+      message: '✅ Equipment analytics summary loaded successfully'
+    });
+  } catch (err) {
+    console.error('Error generating dashboard analytics:', err);
+    res.status(500).json({ error: 'analytics_failed' });
+  }
+});
+
+/* ====== FRONT-END AUTO-INJECT SCRIPT ====== */
+app.get('/dashboard/analytics-widget.js', async (req, res) => {
+  res.type('application/javascript');
+  try {
+    const stats = await db.one(`
+      SELECT
+        COUNT(*) AS total_devices,
+        COUNT(*) FILTER (WHERE is_overdue) AS overdue_devices,
+        COUNT(*) FILTER (WHERE status_color='red') AS critical_devices,
+        COUNT(*) FILTER (WHERE status_color='orange') AS upcoming_devices,
+        COUNT(*) FILTER (WHERE status_color='green') AS healthy_devices,
+        COUNT(*) FILTER (WHERE maintenance_status='resolved') AS resolved_devices
+      FROM equipment;
+    `);
+
+    res.send(`
+      (function(){
+        const data = ${JSON.stringify(stats)};
+        function setText(id, val){
+          var el = document.getElementById(id);
+          if (el) el.textContent = val;
+        }
+        setText('critical-count', data.critical_devices);
+        setText('upcoming-count', data.upcoming_devices);
+        setText('resolved-count', data.resolved_devices);
+        setText('overdue-count', data.overdue_devices);
+        setText('total-count', data.total_devices);
+      })();
+    `);
+  } catch (err) {
+    console.error('dashboard-widget failed:', err);
+    res.send(`console.error('analytics-widget failed');`);
+  }
+});
+
+/* ====== AUTO-INJECT ANALYTICS SCRIPT ====== */
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+  res.send = (body) => {
+    try {
+      if (typeof body === 'string' && body.includes('</body>') && (res.get('Content-Type') || '').includes('text/html')) {
+        const tag = '<script src="/dashboard/analytics-widget.js"></script>';
+        if (!body.includes('/dashboard/analytics-widget.js')) {
+          body = body.replace('</body>', tag + '\n</body>');
+        }
+      }
+    } catch(_) {}
+    return originalSend(body);
+  };
+  next();
+});
