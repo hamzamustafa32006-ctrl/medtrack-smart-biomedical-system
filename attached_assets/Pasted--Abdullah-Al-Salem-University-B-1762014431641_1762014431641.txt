@@ -1,0 +1,216 @@
+-- ============================================================
+-- 🚀 Abdullah Al-Salem University Biomedical Maintenance System
+-- Database Structure + Initial Data
+-- Author: Hamza Ismail
+-- ============================================================
+
+BEGIN;
+
+-- ============================================================
+-- 🧱 STEP 1: DATABASE STRUCTURE
+-- ============================================================
+
+-- Facilities
+CREATE TABLE IF NOT EXISTS facilities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  location TEXT,
+  contact_person TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Equipment
+CREATE TABLE IF NOT EXISTS equipment (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  type TEXT,
+  manufacturer TEXT,
+  model TEXT,
+  serial_number TEXT,
+  facility_id TEXT REFERENCES facilities(id),
+  department TEXT,
+  status TEXT CHECK (status IN ('Good','Needs Maintenance','Not Working')) DEFAULT 'Good',
+  last_maintenance_date DATE,
+  next_due_date DATE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Users
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  role TEXT CHECK (role IN ('Technician','Admin')) DEFAULT 'Technician'
+);
+
+-- Vendors
+CREATE TABLE IF NOT EXISTS vendors (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_info TEXT
+);
+
+-- Contracts
+CREATE TABLE IF NOT EXISTS contracts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_number TEXT,
+  vendor_id TEXT REFERENCES vendors(id),
+  start_date DATE,
+  end_date DATE,
+  contract_type TEXT,
+  status TEXT,
+  auto_renew BOOLEAN DEFAULT FALSE,
+  notes TEXT
+);
+
+-- Maintenance Plans
+CREATE TABLE IF NOT EXISTS maintenance_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  description TEXT,
+  frequency_days INT,
+  department TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Maintenance Records
+CREATE TABLE IF NOT EXISTS maintenance_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE,
+  technician_id TEXT REFERENCES users(id),
+  maintenance_type TEXT,
+  description TEXT,
+  actions_taken TEXT,
+  parts_used TEXT,
+  cost NUMERIC(10,2),
+  status TEXT CHECK (status IN ('In Progress','Completed','Pending Verification')) DEFAULT 'In Progress',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Maintenance Schedules
+CREATE TABLE IF NOT EXISTS maintenance_schedules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE,
+  maintenance_type TEXT,
+  frequency_days INT,
+  last_maintenance_date DATE,
+  next_due_date DATE,
+  assigned_to TEXT,
+  priority TEXT,
+  status TEXT,
+  notes TEXT
+);
+
+-- Maintenance Tasks
+CREATE TABLE IF NOT EXISTS maintenance_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  maintenance_id UUID REFERENCES maintenance_records(id) ON DELETE CASCADE,
+  task_name TEXT NOT NULL,
+  assigned_to TEXT,
+  due_date TIMESTAMP,
+  completed BOOLEAN DEFAULT FALSE,
+  remarks TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Alerts
+CREATE TABLE IF NOT EXISTS alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE,
+  facility_id TEXT REFERENCES facilities(id),
+  severity TEXT CHECK (severity IN ('Info','Warning','Critical')) DEFAULT 'Info',
+  title TEXT,
+  message TEXT,
+  due_date TIMESTAMP,
+  status TEXT DEFAULT 'Open'
+);
+
+-- Notification Logs
+CREATE TABLE IF NOT EXISTS notification_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id TEXT,
+  title TEXT,
+  message TEXT,
+  sent_at TIMESTAMP DEFAULT NOW(),
+  type TEXT CHECK (type IN ('Alert','Reminder','Info')) DEFAULT 'Alert',
+  read BOOLEAN DEFAULT FALSE
+);
+
+COMMIT;
+
+-- ============================================================
+-- 🌱 STEP 2: INSERT INITIAL DATA
+-- ============================================================
+
+BEGIN;
+
+-- Facilities
+INSERT INTO facilities (id, name, location, contact_person)
+VALUES
+  ('fac-001', 'AASU Hospital', 'Building 5', 'Dr. Ahmad'),
+  ('fac-002', 'Biomedical Lab', 'Building 3', 'Eng. Mariam'),
+  ('fac-003', 'Radiology Center', 'Building 7', 'Eng. Faisal');
+
+-- Vendors
+INSERT INTO vendors (id, name, contact_info)
+VALUES
+  ('vendor-001', 'GE Healthcare', 'ge@vendor.com'),
+  ('vendor-002', 'Philips Medical', 'philips@vendor.com');
+
+-- Users
+INSERT INTO users (id, name, role)
+VALUES
+  ('tech-001', 'Ali', 'Technician'),
+  ('tech-002', 'Khalid', 'Technician'),
+  ('tech-003', 'Sarah', 'Technician'),
+  ('admin-001', 'Hamza', 'Admin');
+
+-- Equipment
+INSERT INTO equipment (name, type, manufacturer, model, serial_number, facility_id, department, status, last_maintenance_date, next_due_date)
+VALUES
+  ('Ventilator V900', 'Life Support', 'GE Healthcare', 'V900', 'VN-34562', 'fac-001', 'ICU', 'Good', '2025-06-01', '2025-12-01'),
+  ('X-Ray XR210', 'Diagnostic', 'Philips', 'XR210', 'XR-201', 'fac-003', 'Radiology', 'Needs Maintenance', '2025-03-01', '2025-12-15'),
+  ('CT Scanner CT128', 'Imaging', 'Canon', 'CT128', 'CT-2128', 'fac-003', 'Radiology', 'Not Working', '2025-04-20', '2025-10-20');
+
+-- Contracts
+INSERT INTO contracts (contract_number, vendor_id, start_date, end_date, contract_type, status, auto_renew, notes)
+VALUES
+  ('CT-CON-2025-01', 'vendor-001', '2025-01-01', '2025-12-31', 'Service', 'Active', TRUE, 'عقد صيانة سنوي لأجهزة الأشعة'),
+  ('BIO-CON-2025-02', 'vendor-002', '2025-02-01', '2025-11-30', 'Calibration', 'Active', FALSE, 'معايرة سنوية للأجهزة الحيوية');
+
+-- Maintenance Plans
+INSERT INTO maintenance_plans (name, description, frequency_days, department)
+VALUES
+  ('خطة الصيانة الوقائية', 'فحص دوري كل 6 أشهر للأجهزة الحيوية', 180, 'ICU'),
+  ('خطة المعايرة السنوية', 'معايرة أجهزة الأشعة كل سنة', 365, 'Radiology');
+
+-- Maintenance Records
+INSERT INTO maintenance_records (equipment_id, technician_id, maintenance_type, description, actions_taken, parts_used, cost, status)
+VALUES
+  ((SELECT id FROM equipment WHERE name='Ventilator V900'), 'tech-001', 'Corrective', 'إنذار ضغط خاطئ', 'استبدال حساس الضغط وتنظيف الفلاتر', 'Pressure Sensor', 25.000, 'Completed'),
+  ((SELECT id FROM equipment WHERE name='X-Ray XR210'), 'tech-002', 'Preventive', 'تنظيف وعدسات الأشعة', 'تحديث النظام وتنظيف العدسات', 'Lens Cleaner', 15.000, 'Completed'),
+  ((SELECT id FROM equipment WHERE name='CT Scanner CT128'), 'tech-003', 'Emergency', 'عطل في وحدة الطاقة', 'استبدال وحدة UPS', 'UPS Module', 85.000, 'In Progress');
+
+-- Maintenance Tasks
+INSERT INTO maintenance_tasks (maintenance_id, task_name, assigned_to, due_date, completed, remarks)
+VALUES
+  ((SELECT id FROM maintenance_records WHERE maintenance_type='Corrective' LIMIT 1), 'فحص وحدة الطاقة', 'tech-001', NOW() + INTERVAL '2 days', FALSE, 'بانتظار قطع الغيار'),
+  ((SELECT id FROM maintenance_records WHERE maintenance_type='Preventive' LIMIT 1), 'تنظيف المستشعرات', 'tech-002', NOW() + INTERVAL '3 days', TRUE, 'تم الانتهاء'),
+  ((SELECT id FROM maintenance_records WHERE maintenance_type='Emergency' LIMIT 1), 'استبدال وحدة UPS', 'tech-003', NOW() + INTERVAL '1 day', FALSE, 'بانتظار التأكيد');
+
+-- Alerts
+INSERT INTO alerts (equipment_id, facility_id, severity, title, message, due_date, status)
+VALUES
+  ((SELECT id FROM equipment WHERE name='Ventilator V900'), 'fac-001', 'Warning', 'فحص دوري قريب', 'الجهاز يحتاج فحص نصف سنوي', NOW() + INTERVAL '7 days', 'Open'),
+  ((SELECT id FROM equipment WHERE name='CT Scanner CT128'), 'fac-003', 'Critical', 'عطل كامل', 'الجهاز لا يعمل منذ أسبوع', NOW(), 'Open');
+
+-- Notification Logs
+INSERT INTO notification_logs (recipient_id, title, message, type, read)
+VALUES
+  ('tech-001', 'تنبيه: صيانة قريبة', 'جهاز Ventilator V900 يحتاج فحص خلال أسبوع', 'Reminder', FALSE),
+  ('admin-001', 'تنبيه إداري', 'تم تسجيل عطل في CT Scanner CT128', 'Alert', FALSE);
+
+COMMIT;
+
+-- ============================================================
+-- ✅ DATABASE INITIALIZED SUCCESSFULLY
+-- ============================================================
