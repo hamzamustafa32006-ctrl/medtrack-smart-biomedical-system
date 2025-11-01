@@ -1,62 +1,71 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Filter, Search, Eye, CheckCircle, Edit, Clock, Check } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search, Eye, X, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { MaintenanceRecordForm } from "@/components/maintenance-record-form";
+import { useMaintenance, type MaintenanceFilters, type MaintenanceRecord } from "@/hooks/useMaintenance";
 import { format } from "date-fns";
 
-type MaintenanceRecord = {
-  id: string;
-  equipmentId: string;
-  equipmentName: string | null;
-  equipmentSerial: string | null;
-  equipmentType: string | null;
-  facilityName: string | null;
-  maintenanceType: string;
-  maintenanceDate: string;
-  startDate: string | null;
-  endDate: string | null;
-  status: string;
-  verificationStatus: string;
-  description: string | null;
-  actionsTaken: string | null;
-  partsUsed: string | null;
-  performedBy: string | null;
-  cost: string | null;
-  notes: string | null;
-  createdAt: string;
-};
+const STATUS_OPTIONS = ["In Progress", "Completed", "Scheduled", "Pending Verification"];
+const TYPE_OPTIONS = ["Preventive", "Corrective", "Calibration", "Inspection", "Emergency"];
 
 export default function MaintenancePage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [costMin, setCostMin] = useState<string>("");
+  const [costMax, setCostMax] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [selectedRecord, setSelectedRecord] = useState<MaintenanceRecord | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortField, setSortField] = useState<string>("maintenanceDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: records = [], isLoading } = useQuery<MaintenanceRecord[]>({
-    queryKey: ["/api/maintenance-records/details", { status: statusFilter !== "all" ? statusFilter : undefined, maintenanceType: typeFilter !== "all" ? typeFilter : undefined }],
-  });
+  // Debounced search (simulated via useMemo)
+  const debouncedSearch = useMemo(() => searchQuery, [searchQuery]);
+
+  const filters: MaintenanceFilters = {
+    q: debouncedSearch || undefined,
+    status: selectedStatuses.length > 0 ? selectedStatuses : undefined,
+    maintenanceType: selectedTypes.length > 0 ? selectedTypes : undefined,
+    costMin: costMin ? parseFloat(costMin) : undefined,
+    costMax: costMax ? parseFloat(costMax) : undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    sort: sortField,
+    order: sortOrder,
+    page: currentPage,
+    pageSize: 20,
+  };
+
+  const { data, isLoading } = useMaintenance(filters);
+  const records = data?.data || [];
+  const meta = data?.meta;
 
   const completeMutation = useMutation({
     mutationFn: async (recordId: string) => {
       return await apiRequest("PATCH", `/api/maintenance-records/${recordId}/complete`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/maintenance-records"] });
       queryClient.invalidateQueries({ queryKey: ["/api/maintenance-records/details"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/maintenance-records"] });
       queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
       toast({
@@ -74,14 +83,53 @@ export default function MaintenancePage() {
     },
   });
 
-  const filteredRecords = records.filter((record) => {
-    const matchesSearch = 
-      record.equipmentName?.toLowerCase()?.includes(searchQuery.toLowerCase()) ||
-      record.equipmentSerial?.toLowerCase()?.includes(searchQuery.toLowerCase()) ||
-      record.performedBy?.toLowerCase()?.includes(searchQuery.toLowerCase()) ||
-      record.description?.toLowerCase()?.includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
+  const handleSearch = () => {
+    setSearchQuery(searchInput);
+    setCurrentPage(1);
+  };
+
+  const toggleStatus = (status: string) => {
+    setSelectedStatuses(prev =>
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+    );
+    setCurrentPage(1);
+  };
+
+  const toggleType = (type: string) => {
+    setSelectedTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+    setCurrentPage(1);
+  };
+
+  const resetFilters = () => {
+    setSearchInput("");
+    setSearchQuery("");
+    setSelectedStatuses([]);
+    setSelectedTypes([]);
+    setCostMin("");
+    setCostMax("");
+    setDateFrom("");
+    setDateTo("");
+    setCurrentPage(1);
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("desc");
+    }
+    setCurrentPage(1);
+  };
+
+  const activeFilterCount = 
+    (selectedStatuses.length > 0 ? 1 : 0) +
+    (selectedTypes.length > 0 ? 1 : 0) +
+    (costMin || costMax ? 1 : 0) +
+    (dateFrom || dateTo ? 1 : 0) +
+    (searchQuery ? 1 : 0);
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -127,45 +175,201 @@ export default function MaintenancePage() {
         </Dialog>
       </div>
 
+      {/* Search Bar & Quick Filters */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search equipment, technician, or description..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-                data-testid="input-search-maintenance"
-              />
-            </div>
-            
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-status-filter">
-                <SelectValue placeholder="Filter by Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="In Progress">In Progress</SelectItem>
-                <SelectItem value="Completed">Completed</SelectItem>
-                <SelectItem value="Pending Verification">Pending Verification</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 flex gap-2">
+                <Input
+                  placeholder="Search equipment, technician..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  data-testid="input-search-maintenance"
+                />
+                <Button onClick={handleSearch} variant="secondary" size="icon" data-testid="button-search">
+                  <Search className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <Button variant="outline" onClick={() => setFiltersOpen(true)} className="gap-2" data-testid="button-open-filters">
+                  <Plus className="w-4 h-4" />
+                  Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+                </Button>
+                <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+                  <SheetHeader>
+                    <SheetTitle>Advanced Filters</SheetTitle>
+                  </SheetHeader>
+                  
+                  <div className="mt-6 space-y-6">
+                    <div>
+                      <Label className="text-sm font-semibold">Status</Label>
+                      <div className="mt-2 space-y-2">
+                        {STATUS_OPTIONS.map((status) => (
+                          <div key={status} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`status-${status}`}
+                              checked={selectedStatuses.includes(status)}
+                              onCheckedChange={() => toggleStatus(status)}
+                              data-testid={`checkbox-status-${status}`}
+                            />
+                            <Label htmlFor={`status-${status}`} className="text-sm cursor-pointer">
+                              {status}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
 
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-type-filter">
-                <SelectValue placeholder="Filter by Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="Preventive">Preventive</SelectItem>
-                <SelectItem value="Corrective">Corrective</SelectItem>
-                <SelectItem value="Calibration">Calibration</SelectItem>
-                <SelectItem value="Inspection">Inspection</SelectItem>
-                <SelectItem value="Emergency">Emergency</SelectItem>
-              </SelectContent>
-            </Select>
+                    <div>
+                      <Label className="text-sm font-semibold">Maintenance Type</Label>
+                      <div className="mt-2 space-y-2">
+                        {TYPE_OPTIONS.map((type) => (
+                          <div key={type} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`type-${type}`}
+                              checked={selectedTypes.includes(type)}
+                              onCheckedChange={() => toggleType(type)}
+                              data-testid={`checkbox-type-${type}`}
+                            />
+                            <Label htmlFor={`type-${type}`} className="text-sm cursor-pointer">
+                              {type}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-semibold">Cost Range (KWD)</Label>
+                      <div className="mt-2 flex gap-2">
+                        <Input
+                          type="number"
+                          placeholder="Min"
+                          value={costMin}
+                          onChange={(e) => setCostMin(e.target.value)}
+                          data-testid="input-cost-min"
+                        />
+                        <Input
+                          type="number"
+                          placeholder="Max"
+                          value={costMax}
+                          onChange={(e) => setCostMax(e.target.value)}
+                          data-testid="input-cost-max"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-semibold">Date Range</Label>
+                      <div className="mt-2 space-y-2">
+                        <Input
+                          type="date"
+                          placeholder="From"
+                          value={dateFrom}
+                          onChange={(e) => setDateFrom(e.target.value)}
+                          data-testid="input-date-from"
+                        />
+                        <Input
+                          type="date"
+                          placeholder="To"
+                          value={dateTo}
+                          onChange={(e) => setDateTo(e.target.value)}
+                          data-testid="input-date-to"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          resetFilters();
+                          setFiltersOpen(false);
+                        }}
+                        data-testid="button-reset-filters"
+                      >
+                        Reset
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        onClick={() => setFiltersOpen(false)}
+                        data-testid="button-apply-filters"
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            {/* Active Filter Chips */}
+            {activeFilterCount > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {searchQuery && (
+                  <Badge variant="secondary" className="gap-1">
+                    Search: {searchQuery}
+                    <X
+                      className="w-3 h-3 cursor-pointer"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setSearchInput("");
+                        setCurrentPage(1);
+                      }}
+                    />
+                  </Badge>
+                )}
+                {selectedStatuses.map((status) => (
+                  <Badge key={status} variant="secondary" className="gap-1">
+                    {status}
+                    <X className="w-3 h-3 cursor-pointer" onClick={() => toggleStatus(status)} />
+                  </Badge>
+                ))}
+                {selectedTypes.map((type) => (
+                  <Badge key={type} variant="secondary" className="gap-1">
+                    {type}
+                    <X className="w-3 h-3 cursor-pointer" onClick={() => toggleType(type)} />
+                  </Badge>
+                ))}
+                {(costMin || costMax) && (
+                  <Badge variant="secondary" className="gap-1">
+                    Cost: {costMin || "0"} - {costMax || "∞"}
+                    <X
+                      className="w-3 h-3 cursor-pointer"
+                      onClick={() => {
+                        setCostMin("");
+                        setCostMax("");
+                        setCurrentPage(1);
+                      }}
+                    />
+                  </Badge>
+                )}
+                {(dateFrom || dateTo) && (
+                  <Badge variant="secondary" className="gap-1">
+                    Date: {dateFrom || "Start"} - {dateTo || "End"}
+                    <X
+                      className="w-3 h-3 cursor-pointer"
+                      onClick={() => {
+                        setDateFrom("");
+                        setDateTo("");
+                        setCurrentPage(1);
+                      }}
+                    />
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            {/* Results Count */}
+            {meta && (
+              <div className="text-sm text-muted-foreground">
+                Showing {records.length > 0 ? (meta.page - 1) * meta.pageSize + 1 : 0} - {Math.min(meta.page * meta.pageSize, meta.total)} of {meta.total} records
+              </div>
+            )}
           </div>
         </CardHeader>
 
@@ -176,87 +380,175 @@ export default function MaintenancePage() {
                 <Skeleton key={i} className="h-16 w-full" />
               ))}
             </div>
-          ) : filteredRecords.length === 0 ? (
+          ) : records.length === 0 ? (
             <div className="text-center py-12">
-              <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+              <Search className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
               <h3 className="text-lg font-semibold text-foreground">No Maintenance Records</h3>
               <p className="text-muted-foreground mt-1">
-                {searchQuery || statusFilter !== "all" || typeFilter !== "all"
+                {activeFilterCount > 0
                   ? "No records match your filters"
                   : "Start by logging your first maintenance activity"}
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Equipment</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Technician</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Cost (KWD)</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRecords.map((record) => (
-                    <TableRow key={record.id} data-testid={`row-maintenance-${record.id}`}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-foreground" data-testid={`text-equipment-name-${record.id}`}>
-                            {record.equipmentName}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {record.equipmentSerial && `SN: ${record.equipmentSerial}`}
-                            {record.facilityName && ` • ${record.facilityName}`}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`${getTypeBadgeColor(record.maintenanceType)} no-default-hover-elevate`}>
-                          {record.maintenanceType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-foreground">
-                          {format(new Date(record.maintenanceDate), "dd/MM/yyyy")}
-                        </p>
-                        {record.endDate && (
-                          <p className="text-xs text-muted-foreground">
-                            Completed: {format(new Date(record.endDate), "dd/MM/yyyy")}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-foreground">{record.performedBy || "—"}</p>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadgeVariant(record.status)}>
-                          {record.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm font-medium text-foreground">
-                          {record.cost ? parseFloat(record.cost).toFixed(2) : "—"}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-right">
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          onClick={() => setSelectedRecord(record)}
-                          data-testid={`button-view-${record.id}`}
+                          size="sm"
+                          className="gap-1 hover-elevate"
+                          onClick={() => handleSort("equipmentName")}
+                          data-testid="sort-equipment"
                         >
-                          <Eye className="w-4 h-4" />
+                          Equipment
+                          {sortField === "equipmentName" && <ArrowUpDown className="w-3 h-3" />}
                         </Button>
-                      </TableCell>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 hover-elevate"
+                          onClick={() => handleSort("maintenanceType")}
+                          data-testid="sort-type"
+                        >
+                          Type
+                          {sortField === "maintenanceType" && <ArrowUpDown className="w-3 h-3" />}
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 hover-elevate"
+                          onClick={() => handleSort("maintenanceDate")}
+                          data-testid="sort-date"
+                        >
+                          Date
+                          {sortField === "maintenanceDate" && <ArrowUpDown className="w-3 h-3" />}
+                        </Button>
+                      </TableHead>
+                      <TableHead>Technician</TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 hover-elevate"
+                          onClick={() => handleSort("status")}
+                          data-testid="sort-status"
+                        >
+                          Status
+                          {sortField === "status" && <ArrowUpDown className="w-3 h-3" />}
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 hover-elevate"
+                          onClick={() => handleSort("cost")}
+                          data-testid="sort-cost"
+                        >
+                          Cost (KWD)
+                          {sortField === "cost" && <ArrowUpDown className="w-3 h-3" />}
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {records.map((record) => (
+                      <TableRow key={record.id} data-testid={`row-maintenance-${record.id}`}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-foreground" data-testid={`text-equipment-name-${record.id}`}>
+                              {record.equipmentName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {record.equipmentSerial && `SN: ${record.equipmentSerial}`}
+                              {record.facilityName && ` • ${record.facilityName}`}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`${getTypeBadgeColor(record.maintenanceType)} no-default-hover-elevate`}>
+                            {record.maintenanceType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm text-foreground">
+                            {format(new Date(record.maintenanceDate), "dd/MM/yyyy")}
+                          </p>
+                          {record.endDate && (
+                            <p className="text-xs text-muted-foreground">
+                              Completed: {format(new Date(record.endDate), "dd/MM/yyyy")}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm text-foreground">{record.performedBy || "—"}</p>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusBadgeVariant(record.status)}>
+                            {record.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm font-medium text-foreground">
+                            {record.cost ? parseFloat(record.cost).toFixed(2) : "—"}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSelectedRecord(record)}
+                            data-testid={`button-view-${record.id}`}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination */}
+              {meta && meta.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Page {meta.page} of {meta.totalPages}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={meta.page === 1}
+                      data-testid="button-prev-page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(meta.totalPages, p + 1))}
+                      disabled={meta.page === meta.totalPages}
+                      data-testid="button-next-page"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

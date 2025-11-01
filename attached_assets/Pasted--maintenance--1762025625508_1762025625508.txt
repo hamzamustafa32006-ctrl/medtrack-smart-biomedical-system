@@ -1,0 +1,331 @@
+تمام يا حمزة! خلنا نرفع مستوى الفلترة بصفحة **/maintenance** بحيث تصير قوية وسريعة وواضحة. تحت أعطيك:
+
+1. منطق باك-إند بــ Drizzle (and/eq/inArray… إلخ) مع فلترة متعددة القيم + مدى تواريخ + مدى تكلفة + ترتيب + ترقيم صفحات.
+2. هوك فرونت-إند بـ TanStack Query لبناء رابط الفلترة، مع UI أفكار سريعة (chips + multi-select + date range) و مزايا جودة حياة (حفظ الفلاتر، Reset، مزامنة مع URL).
+
+---
+
+### 1) API (Drizzle + Postgres)
+
+```ts
+// src/routes/maintenance/list.ts
+import { Router } from 'express';
+import { db } from '@/db';
+import { maintenanceRecords, equipment, technicians, vendors } from '@/db/schema';
+import {
+  and, or, eq, inArray, gte, lte, like, sql, desc, asc, between
+} from 'drizzle-orm';
+
+const router = Router();
+
+const ALLOWED_SORT = new Set([
+  'created_at','scheduled_date','started_at','completed_at','cost','priority','severity'
+]);
+
+router.get('/api/maintenance', async (req, res) => {
+  try {
+    const {
+      q,                       // بحث عام: اسم الجهاز/فني
+      status,                  // متعدد: completed,in_progress,scheduled,overdue
+      type,                    // متعدد: corrective,preventive,inspection,calibration
+      priority,                // متعدد: Low,Medium,High,Critical
+      severity,                // متعدد: Low,Medium,High,Critical
+      technicianId,            // واحد
+      equipmentId,             // واحد
+      departmentId,            // واحد
+      vendorId,                // واحد
+      locationId,              // واحد
+      warranty,                // true/false
+      contractId,              // واحد
+      costMin, costMax,        // أرقام
+      dateFrom, dateTo,        // ISO (يطبّق على scheduled_date أو created_at)
+      dateField = 'scheduled_date', // created_at | scheduled_date | completed_at | started_at
+      overdue,                 // true/false: due < now && not completed
+      withinDays,              // integer: سجلات موعدها خلال X أيام
+      sort = 'scheduled_date',
+      order = 'asc',
+      page = '1',
+      pageSize = '20',
+    } = req.query as Record<string, string>;
+
+    const pageNum = Math.max(1, parseInt(page || '1'));
+    const sizeNum = Math.min(100, Math.max(1, parseInt(pageSize || '20')));
+    const offset = (pageNum - 1) * sizeNum;
+
+    const conds = [];
+
+    // علاقات
+    const base = db.select({
+      id: maintenanceRecords.id,
+      equipmentName: equipment.name,
+      technicianName: technicians.name,
+      vendorName: vendors.name,
+      status: maintenanceRecords.status,
+      type: maintenanceRecords.type,
+      priority: maintenanceRecords.priority,
+      severity: maintenanceRecords.severity,
+      cost: maintenanceRecords.cost,
+      created_at: maintenanceRecords.createdAt,
+      scheduled_date: maintenanceRecords.scheduledDate,
+      started_at: maintenanceRecords.startedAt,
+      completed_at: maintenanceRecords.completedAt,
+      department_id: equipment.departmentId,
+      location_id: equipment.locationId,
+      warranty: equipment.warrantyActive,
+      contract_id: equipment.contractId,
+    })
+    .from(maintenanceRecords)
+    .leftJoin(equipment, eq(maintenanceRecords.equipmentId, equipment.id))
+    .leftJoin(technicians, eq(maintenanceRecords.technicianId, technicians.id))
+    .leftJoin(vendors, eq(maintenanceRecords.vendorId, vendors.id));
+
+    // q: يبحث بالاسمين
+    if (q && q.trim()) {
+      const p = `%${q.trim()}%`;
+      conds.push(
+        or(like(equipment.name, p), like(technicians.name, p))
+      );
+    }
+
+    // multi helpers
+    const parseMulti = (v?: string) =>
+      v ? v.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+
+    const statusArr   = parseMulti(status);
+    const typeArr     = parseMulti(type);
+    const priorityArr = parseMulti(priority);
+    const severityArr = parseMulti(severity);
+
+    if (statusArr?.length)   conds.push(inArray(maintenanceRecords.status, statusArr));
+    if (typeArr?.length)     conds.push(inArray(maintenanceRecords.type, typeArr));
+    if (priorityArr?.length) conds.push(inArray(maintenanceRecords.priority, priorityArr));
+    if (severityArr?.length) conds.push(inArray(maintenanceRecords.severity, severityArr));
+
+    if (technicianId) conds.push(eq(maintenanceRecords.technicianId, Number(technicianId)));
+    if (equipmentId)  conds.push(eq(maintenanceRecords.equipmentId, Number(equipmentId)));
+    if (departmentId) conds.push(eq(equipment.departmentId, Number(departmentId)));
+    if (vendorId)     conds.push(eq(maintenanceRecords.vendorId, Number(vendorId)));
+    if (locationId)   conds.push(eq(equipment.locationId, Number(locationId)));
+    if (contractId)   conds.push(eq(equipment.contractId, Number(contractId)));
+
+    if (warranty === 'true')  conds.push(eq(equipment.warrantyActive, true));
+    if (warranty === 'false') conds.push(eq(equipment.warrantyActive, false));
+
+    // تكلفة
+    if (costMin && costMax)  conds.push(between(maintenanceRecords.cost, Number(costMin), Number(costMax)));
+    else if (costMin)        conds.push(gte(maintenanceRecords.cost, Number(costMin)));
+    else if (costMax)        conds.push(lte(maintenanceRecords.cost, Number(costMax)));
+
+    // تاريخ
+    const dateCol =
+      dateField === 'created_at'   ? maintenanceRecords.createdAt :
+      dateField === 'completed_at' ? maintenanceRecords.completedAt :
+      dateField === 'started_at'   ? maintenanceRecords.startedAt :
+                                     maintenanceRecords.scheduledDate;
+
+    if (dateFrom && dateTo)  conds.push(between(dateCol, new Date(dateFrom), new Date(dateTo)));
+    else if (dateFrom)       conds.push(gte(dateCol, new Date(dateFrom)));
+    else if (dateTo)         conds.push(lte(dateCol, new Date(dateTo)));
+
+    // Overdue أو withinDays
+    const now = new Date();
+    if (overdue === 'true') {
+      conds.push(
+        and(
+          lte(maintenanceRecords.scheduledDate, now),
+          inArray(maintenanceRecords.status, ['in_progress','scheduled']) // لم يكتمل
+        )
+      );
+    }
+    if (withinDays) {
+      const d = new Date();
+      d.setDate(d.getDate() + Number(withinDays));
+      conds.push(and(
+        gte(maintenanceRecords.scheduledDate, now),
+        lte(maintenanceRecords.scheduledDate, d)
+      ));
+    }
+
+    const whereExpr = conds.length ? and(...conds) : undefined;
+
+    // total count
+    const [{ count }] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(maintenanceRecords)
+      .leftJoin(equipment, eq(maintenanceRecords.equipmentId, equipment.id))
+      .leftJoin(technicians, eq(maintenanceRecords.technicianId, technicians.id))
+      .where(whereExpr);
+
+    const sortCol = ALLOWED_SORT.has(sort) ? sort : 'scheduled_date';
+    const orderFn = order?.toLowerCase() === 'desc' ? desc : asc;
+
+    const rows = await base
+      .where(whereExpr)
+      .orderBy(orderFn(sql.identifier(sortCol)))
+      .limit(sizeNum)
+      .offset(offset);
+
+    res.json({
+      meta: {
+        page: pageNum,
+        pageSize: sizeNum,
+        total: Number(count),
+        totalPages: Math.ceil(Number(count) / sizeNum) || 1,
+        sort: sortCol, order: order?.toLowerCase() === 'desc' ? 'desc' : 'asc'
+      },
+      data: rows
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'FILTER_FAILED' });
+  }
+});
+
+export default router;
+```
+
+**ملاحظات أداء سريعة (مهم):**
+
+* أضف فهارس:
+
+  * على `maintenance_records(status, type, priority, severity)`
+  * على `maintenance_records(scheduled_date)`, `completed_at`, `created_at`, `started_at`
+  * على `maintenance_records(cost)`
+  * على علاقات `equipment_id`, `technician_id`, `vendor_id`
+  * على `equipment(department_id, location_id, contract_id, warranty_active, name)`
+
+---
+
+### 2) فرونت-إند (TanStack Query + فلترة احترافية)
+
+#### هوك الجلب:
+
+```ts
+// frontend/src/hooks/useMaintenance.ts
+import { useQuery } from '@tanstack/react-query';
+
+export type MaintenanceFilters = {
+  q?: string;
+  status?: string[];     // ['completed','in_progress',...]
+  type?: string[];       // ['corrective','preventive',...]
+  priority?: string[];   // ['Low','Medium','High','Critical']
+  severity?: string[];   // same as above
+  technicianId?: number;
+  equipmentId?: number;
+  departmentId?: number;
+  vendorId?: number;
+  locationId?: number;
+  warranty?: boolean;
+  contractId?: number;
+  costMin?: number;
+  costMax?: number;
+  dateFrom?: string;     // ISO
+  dateTo?: string;       // ISO
+  dateField?: 'created_at'|'scheduled_date'|'started_at'|'completed_at';
+  overdue?: boolean;
+  withinDays?: number;
+  sort?: string;
+  order?: 'asc'|'desc';
+  page?: number;
+  pageSize?: number;
+};
+
+const toQuery = (f: MaintenanceFilters) => {
+  const p = new URLSearchParams();
+  if (f.q) p.set('q', f.q);
+  for (const [k, arr] of Object.entries({
+    status: f.status, type: f.type, priority: f.priority, severity: f.severity
+  })) if (arr?.length) p.set(k, arr.join(','));
+
+  const set = (k: string, v: any) => v !== undefined && v !== null && v !== '' && p.set(k, String(v));
+
+  set('technicianId', f.technicianId);
+  set('equipmentId',  f.equipmentId);
+  set('departmentId', f.departmentId);
+  set('vendorId',     f.vendorId);
+  set('locationId',   f.locationId);
+  if (typeof f.warranty === 'boolean') set('warranty', f.warranty);
+  set('contractId',   f.contractId);
+  set('costMin',      f.costMin);
+  set('costMax',      f.costMax);
+  set('dateFrom',     f.dateFrom);
+  set('dateTo',       f.dateTo);
+  set('dateField',    f.dateField);
+  if (typeof f.overdue === 'boolean') set('overdue', f.overdue);
+  set('withinDays',   f.withinDays);
+  set('sort',         f.sort);
+  set('order',        f.order);
+  set('page',         f.page);
+  set('pageSize',     f.pageSize);
+  return p.toString();
+};
+
+export function useMaintenance(filters: MaintenanceFilters) {
+  const q = toQuery(filters);
+  return useQuery({
+    queryKey: ['maintenance', q],
+    queryFn: async () => {
+      const res = await fetch(`/api/maintenance?${q}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('failed');
+      return res.json() as Promise<{ meta: any; data: any[] }>;
+    },
+    keepPreviousData: true,
+    staleTime: 15_000,
+  });
+}
+```
+
+#### أفكار UI سريعة (تطبيقها بسيط):
+
+* **Multi-select** لـ Status/Type/Priority/Severity.
+* **Date range picker** مع اختيار الحقل (Scheduled/Completed/Created/Started).
+* **Cost range** (Min/Max).
+* **Overdue toggle** و **Within X days** (Input).
+* **Chips** تعرض الفلاتر النشطة مع زر × لإزالتها بسرعة.
+* **Sync مع URL**: استخدم `useSearchParams` (Next 13+) عشان الروابط قابلة للمشاركة.
+* **Saved Views**: خزّن الفلاتر في `localStorage` (اسم + استرجاع سريع).
+* **Reset**: زر يمسح كل شيء للافتراضي.
+* **Server-side filtering** (كما في API) + **debounce** 300ms لحقول البحث.
+
+#### مثال واجهة (مقتطف):
+
+```tsx
+// داخل صفحة /maintenance
+const [filters, setFilters] = useState<MaintenanceFilters>({
+  page: 1, pageSize: 20, sort: 'scheduled_date', order: 'asc',
+  status: ['completed','in_progress','scheduled'] // افتراضي
+});
+const { data, isLoading } = useMaintenance(filters);
+
+// مثال: تحديث فلتر
+function toggleStatus(s: string) {
+  setFilters(f => {
+    const set = new Set(f.status || []);
+    set.has(s) ? set.delete(s) : set.add(s);
+    return { ...f, status: Array.from(set), page: 1 };
+  });
+}
+```
+
+---
+
+### 3) اختصارات UX (تفيد المستخدم بسرعة)
+
+* **Quick filters** أعلى الجدول: `All | Overdue | This Week | This Month | Under Warranty | High Priority`
+* **ترتيب بالنقر على رأس العمود** (يرسل `sort`/`order`).
+* **عدادات صغيرة** فوق الجدول تعرض النتائج الحالية (Total/Pages).
+
+---
+
+### 4) لماذا هذا يحل مشكلتك؟
+
+* أنت أصلحت `.where()` إلى `and(...conditions)` ✅ — الكود أعلاه يبني **مصفوفة شروط** ثم يمررها في `and()` بنهاية واحدة، ما يمنع الاستبدال العرضي للشروط.
+* يدعم **فلترة مركبة** بدون تعارض، قابل للتوسع مستقبلاً (تضيف حقول بسهولة).
+* مؤشّرات (Indexes) تضمن سرعة حتى مع بيانات كثيرة.
+
+لو تبي، أجهز لك **Patch واحد (git apply)** يحوي:
+
+* الراوت `/api/maintenance`
+* الهوك `useMaintenance`
+* مكوّن فلاتر جاهز (اختياري)
+  قلّي، وأبني لك الباتش على نفس مسارات مشروعك.

@@ -387,20 +387,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get maintenance records with details and filters
+  // Get maintenance records with details and advanced filters
   app.get("/api/maintenance-records/details", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { equipmentId, status, maintenanceType, technicianId } = req.query;
+      const {
+        q,                    // Search query
+        status,               // Multi-value: Completed,In Progress,Scheduled
+        maintenanceType,      // Multi-value: Preventive,Corrective,Calibration,Emergency
+        equipmentId,
+        technicianId,
+        costMin,
+        costMax,
+        dateFrom,
+        dateTo,
+        sort = 'maintenanceDate',
+        order = 'desc',
+        page = '1',
+        pageSize = '20',
+      } = req.query;
+
+      const pageNum = Math.max(1, parseInt(page as string || '1'));
+      const sizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string || '20')));
       
       const filters: any = {};
+      
+      // Search query
+      if (q && typeof q === 'string' && q.trim()) {
+        filters.q = q.trim();
+      }
+      
+      // Multi-value filters (comma-separated)
+      if (status && typeof status === 'string') {
+        filters.status = status.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      if (maintenanceType && typeof maintenanceType === 'string') {
+        filters.maintenanceType = maintenanceType.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      
+      // Single value filters
       if (equipmentId) filters.equipmentId = equipmentId as string;
-      if (status) filters.status = status as string;
-      if (maintenanceType) filters.maintenanceType = maintenanceType as string;
       if (technicianId) filters.technicianId = technicianId as string;
+      
+      // Cost range
+      if (costMin) filters.costMin = parseFloat(costMin as string);
+      if (costMax) filters.costMax = parseFloat(costMax as string);
+      
+      // Date range
+      if (dateFrom) filters.dateFrom = new Date(dateFrom as string);
+      if (dateTo) filters.dateTo = new Date(dateTo as string);
+      
+      // Sorting
+      filters.sort = sort as string;
+      filters.order = (order as string)?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+      
+      // Pagination
+      filters.page = pageNum;
+      filters.pageSize = sizeNum;
 
-      const records = await storage.getMaintenanceRecordsWithDetails(userId, filters);
-      res.json(records);
+      const result = await storage.getMaintenanceRecordsWithDetails(userId, filters);
+      res.json(result);
     } catch (error) {
       console.error("Error fetching maintenance records with details:", error);
       res.status(500).json({ message: "Failed to fetch maintenance records" });

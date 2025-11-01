@@ -91,11 +91,20 @@ export interface IStorage {
   // Maintenance record operations
   getMaintenanceRecords(userId: string): Promise<MaintenanceRecord[]>;
   getMaintenanceRecordsWithDetails(userId: string, filters?: { 
+    q?: string;
     equipmentId?: string; 
-    status?: string; 
-    maintenanceType?: string;
+    status?: string | string[]; 
+    maintenanceType?: string | string[];
     technicianId?: string;
-  }): Promise<any[]>;
+    costMin?: number;
+    costMax?: number;
+    dateFrom?: Date;
+    dateTo?: Date;
+    sort?: string;
+    order?: 'asc' | 'desc';
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ meta: any; data: any[] }>;
   getMaintenanceRecordById(id: string, userId: string): Promise<MaintenanceRecord | undefined>;
   createMaintenanceRecord(data: InsertMaintenanceRecord, userId: string): Promise<MaintenanceRecord>;
   updateMaintenanceRecord(id: string, data: Partial<InsertMaintenanceRecord>, userId: string): Promise<MaintenanceRecord | undefined>;
@@ -767,27 +776,111 @@ export class DatabaseStorage implements IStorage {
   async getMaintenanceRecordsWithDetails(
     userId: string,
     filters?: { 
+      q?: string;
       equipmentId?: string; 
-      status?: string; 
-      maintenanceType?: string;
+      status?: string | string[]; 
+      maintenanceType?: string | string[];
       technicianId?: string;
+      costMin?: number;
+      costMax?: number;
+      dateFrom?: Date;
+      dateTo?: Date;
+      sort?: string;
+      order?: 'asc' | 'desc';
+      page?: number;
+      pageSize?: number;
     }
-  ): Promise<any[]> {
+  ): Promise<{ meta: any; data: any[] }> {
     // Build where conditions
     const conditions: any[] = [eq(maintenanceRecords.userId, userId)];
     
+    // Search query (equipment name, serial, technician)
+    if (filters?.q) {
+      const searchPattern = `%${filters.q}%`;
+      conditions.push(
+        or(
+          sql`${equipment.name} ILIKE ${searchPattern}`,
+          sql`${equipment.serial} ILIKE ${searchPattern}`,
+          sql`${maintenanceRecords.performedBy} ILIKE ${searchPattern}`
+        )
+      );
+    }
+    
+    // Multi-value filters
+    if (filters?.status) {
+      if (Array.isArray(filters.status)) {
+        conditions.push(inArray(maintenanceRecords.status, filters.status));
+      } else {
+        conditions.push(eq(maintenanceRecords.status, filters.status));
+      }
+    }
+    
+    if (filters?.maintenanceType) {
+      if (Array.isArray(filters.maintenanceType)) {
+        conditions.push(inArray(maintenanceRecords.maintenanceType, filters.maintenanceType));
+      } else {
+        conditions.push(eq(maintenanceRecords.maintenanceType, filters.maintenanceType));
+      }
+    }
+    
+    // Single value filters
     if (filters?.equipmentId) {
       conditions.push(eq(maintenanceRecords.equipmentId, filters.equipmentId));
-    }
-    if (filters?.status) {
-      conditions.push(eq(maintenanceRecords.status, filters.status));
-    }
-    if (filters?.maintenanceType) {
-      conditions.push(eq(maintenanceRecords.maintenanceType, filters.maintenanceType));
     }
     if (filters?.technicianId) {
       conditions.push(eq(maintenanceRecords.technicianId, filters.technicianId));
     }
+    
+    // Cost range
+    if (filters?.costMin !== undefined && filters?.costMax !== undefined) {
+      conditions.push(
+        and(
+          gte(maintenanceRecords.cost, filters.costMin.toString()),
+          lte(maintenanceRecords.cost, filters.costMax.toString())
+        )
+      );
+    } else if (filters?.costMin !== undefined) {
+      conditions.push(gte(maintenanceRecords.cost, filters.costMin.toString()));
+    } else if (filters?.costMax !== undefined) {
+      conditions.push(lte(maintenanceRecords.cost, filters.costMax.toString()));
+    }
+    
+    // Date range
+    if (filters?.dateFrom && filters?.dateTo) {
+      conditions.push(
+        and(
+          gte(maintenanceRecords.maintenanceDate, filters.dateFrom),
+          lte(maintenanceRecords.maintenanceDate, filters.dateTo)
+        )
+      );
+    } else if (filters?.dateFrom) {
+      conditions.push(gte(maintenanceRecords.maintenanceDate, filters.dateFrom));
+    } else if (filters?.dateTo) {
+      conditions.push(lte(maintenanceRecords.maintenanceDate, filters.dateTo));
+    }
+
+    // Get total count
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(maintenanceRecords)
+      .leftJoin(equipment, eq(maintenanceRecords.equipmentId, equipment.id))
+      .leftJoin(facilities, eq(equipment.facilityId, facilities.id))
+      .where(and(...conditions));
+
+    // Determine sort column
+    const sortColumn = 
+      filters?.sort === 'cost' ? maintenanceRecords.cost :
+      filters?.sort === 'status' ? maintenanceRecords.status :
+      filters?.sort === 'maintenanceType' ? maintenanceRecords.maintenanceType :
+      filters?.sort === 'equipmentName' ? equipment.name :
+      maintenanceRecords.maintenanceDate;
+    
+    const orderFn = filters?.order === 'asc' ? asc : desc;
+    
+    // Pagination
+    const page = filters?.page || 1;
+    const pageSize = filters?.pageSize || 20;
+    const offset = (page - 1) * pageSize;
 
     const records = await db
       .select({
@@ -821,9 +914,21 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(equipment, eq(maintenanceRecords.equipmentId, equipment.id))
       .leftJoin(facilities, eq(equipment.facilityId, facilities.id))
       .where(and(...conditions))
-      .orderBy(desc(maintenanceRecords.maintenanceDate));
+      .orderBy(orderFn(sortColumn))
+      .limit(pageSize)
+      .offset(offset);
 
-    return records;
+    return {
+      meta: {
+        page,
+        pageSize,
+        total: Number(count),
+        totalPages: Math.ceil(Number(count) / pageSize) || 1,
+        sort: filters?.sort || 'maintenanceDate',
+        order: filters?.order || 'desc',
+      },
+      data: records,
+    };
   }
 
   async getMaintenanceRecordById(
