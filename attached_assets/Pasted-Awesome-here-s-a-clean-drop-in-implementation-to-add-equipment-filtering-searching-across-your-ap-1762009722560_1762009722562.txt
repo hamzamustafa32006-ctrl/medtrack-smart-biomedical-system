@@ -1,0 +1,237 @@
+Awesome—here’s a clean, drop-in implementation to add equipment filtering & searching across your app, supporting both your integrated page filters and a standalone reusable component for dashboards/calendar/mobile.
+
+⸻
+
+1) Backend (query contract)
+
+(If you already shipped this, keep as-is. Below is the contract the frontend uses.)
+
+GET /equipment?status=&search=&facility=&limit=&offset=&sort=
+
+	•	status: Active | Pending Inspection | Under Maintenance | Decommissioned
+	•	search: free text (name, model, serial, facility)
+	•	facility: UUID (optional)
+	•	sort: name (default) or next_due_date
+	•	limit/offset: pagination (default 20/0)
+
+⸻
+
+2) Frontend – Standalone, reusable filter (TSX)
+
+Use this anywhere (Dashboard, Calendar, Mobile) without touching the page architecture. It calls your backend and returns results via onResults.
+
+// components/EquipmentFilter.tsx
+import { useEffect, useMemo, useState } from "react";
+
+type Props = {
+  onResults: (rows: any[]) => void;
+  initialStatus?: string;
+  withFacility?: boolean;
+};
+
+const STATUSES = [
+  { label: "All Statuses", value: "" },
+  { label: "Active", value: "Active" },
+  { label: "Pending Inspection", value: "Pending Inspection" },
+  { label: "Under Maintenance", value: "Under Maintenance" },
+  { label: "Decommissioned", value: "Decommissioned" },
+];
+
+export default function EquipmentFilter({
+  onResults,
+  initialStatus = "",
+  withFacility = false,
+}: Props) {
+  const [status, setStatus] = useState(initialStatus);
+  const [search, setSearch] = useState("");
+  const [facility, setFacility] = useState<string>("");
+  const [facilities, setFacilities] = useState<{ id: string; name: string }[]>(
+    []
+  );
+  const [loading, setLoading] = useState(false);
+  const [limit, setLimit] = useState(20);
+  const [offset, setOffset] = useState(0);
+  const [sort, setSort] = useState<"name" | "next_due_date">("name");
+
+  // simple debounce (300ms)
+  const debouncedSearch = useMemo(() => {
+    let t: any;
+    return (val: string, cb: () => void) => {
+      clearTimeout(t);
+      t = setTimeout(cb, 300);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!withFacility) return;
+    // optional: fetch facilities once (or feed via props)
+    fetch("/facilities?limit=1000")
+      .then((r) => r.json())
+      .then((data) => setFacilities(data || []))
+      .catch(() => setFacilities([]));
+  }, [withFacility]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (status) params.append("status", status);
+      if (search) params.append("search", search);
+      if (withFacility && facility) params.append("facility", facility);
+      params.append("limit", String(limit));
+      params.append("offset", String(offset));
+      params.append("sort", sort);
+
+      const res = await fetch(`/equipment?${params.toString()}`);
+      const data = await res.json();
+      onResults(Array.isArray(data) ? data : []);
+    } catch (e) {
+      onResults([]);
+      console.error("Fetch equipment failed", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // initial & whenever paging/sort/status/facility changes
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, facility, limit, offset, sort]);
+
+  // live debounce for search
+  useEffect(() => {
+    return debouncedSearch(search, fetchData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 mb-4">
+      <select
+        value={status}
+        onChange={(e) => {
+          setOffset(0);
+          setStatus(e.target.value);
+        }}
+        className="border rounded-lg px-3 py-2 text-sm"
+      >
+        {STATUSES.map((s) => (
+          <option key={s.label} value={s.value}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+
+      <input
+        type="text"
+        placeholder="Search name / model / serial / facility…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="border rounded-lg px-3 py-2 w-72 text-sm"
+      />
+
+      {withFacility && (
+        <select
+          value={facility}
+          onChange={(e) => {
+            setOffset(0);
+            setFacility(e.target.value);
+          }}
+          className="border rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">All Facilities</option>
+          {facilities.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <select
+        value={sort}
+        onChange={(e) => setSort(e.target.value as any)}
+        className="border rounded-lg px-3 py-2 text-sm"
+      >
+        <option value="name">Sort: Name</option>
+        <option value="next_due_date">Sort: Next Maintenance</option>
+      </select>
+
+      <button
+        onClick={fetchData}
+        disabled={loading}
+        className={`px-4 py-2 rounded-lg text-white ${
+          loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+        }`}
+      >
+        {loading ? "Loading…" : "Refresh"}
+      </button>
+    </div>
+  );
+}
+
+
+⸻
+
+3) Example usage
+
+A) Equipment Page (keep your current integrated logic, but you can still use this for consistency)
+
+import { useState } from "react";
+import EquipmentFilter from "@/components/EquipmentFilter";
+
+export default function EquipmentPage() {
+  const [rows, setRows] = useState<any[]>([]);
+
+  return (
+    <div className="p-6">
+      <h1 className="text-xl font-semibold mb-4">Equipment</h1>
+      <EquipmentFilter onResults={setRows} withFacility />
+      <EquipmentTable data={rows} />
+    </div>
+  );
+}
+
+B) Dashboard Widget
+
+<EquipmentFilter onResults={setFiltered} />
+<KpiCards data={filtered} />
+
+C) Calendar View (filter feed)
+
+<EquipmentFilter onResults={(data) => setCalendarFeed(data)} />
+<MaintenanceCalendar equipment={calendarFeed} />
+
+
+⸻
+
+4) Optional: client-side instant filter (keep API results, refine locally)
+
+If you want the best of both worlds (API + instant refine), add a tiny client filter on top of fetched results:
+
+function refineClientSide(rows: any[], q: string) {
+  if (!q) return rows;
+  const s = q.toLowerCase();
+  return rows.filter(
+    (r) =>
+      (r.name || "").toLowerCase().includes(s) ||
+      (r.model || "").toLowerCase().includes(s) ||
+      (r.serial_number || "").toLowerCase().includes(s) ||
+      (r.facility_name || "").toLowerCase().includes(s)
+  );
+}
+
+
+⸻
+
+5) Acceptance checklist
+	•	Filter by maintenance status
+	•	Search by name/model/serial/facility
+	•	Optional facility dropdown
+	•	Debounced live search (300ms)
+	•	Pagination + sorting params supported
+	•	Reusable component works in Equipment page, Dashboard, Calendar, Mobile
+
+⸻
+
+If you want, I can also ship a tiny EquipmentTable (striped rows + status badges) and a MaintenanceCalendar adapter that maps filtered results to calendar events.
