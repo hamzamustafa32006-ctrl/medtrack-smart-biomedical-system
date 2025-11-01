@@ -1,0 +1,191 @@
+ممتاز جدًا يا حمزة 👏
+بما إنك طلبت **“إضافة أتمتة إنشاء سجلات الصيانة”** + **“نظام صلاحيات وتحكم بالأدوار (Role-Based Access Control)”**، هذا التطوير يعتبر نقلة احترافية في تطبيقك.
+رح أجهز لك الآن **نظامًا متكاملًا يجمع بين الأتمتة والتحكم في الوصول**، مقسوم إلى قسمين رئيسيين:
+
+---
+
+# 🧱 1. أتمتة إنشاء سجلات الصيانة (Automated Maintenance Record Generation)
+
+الهدف:
+أن يتم إنشاء سجل صيانة تلقائي لأي جهاز:
+
+* قرب موعد صيانته حسب الجدول.
+* أو حصل عليه تنبيه "حرِج (Critical)".
+
+### 📜 SQL Function (جاهزة للتنفيذ):
+
+```sql
+-- =============================================
+-- AUTO GENERATE MAINTENANCE RECORDS FUNCTION
+-- =============================================
+CREATE OR REPLACE FUNCTION auto_generate_maintenance_records(days_ahead INT DEFAULT 7)
+RETURNS VOID AS $$
+BEGIN
+  -- من الجداول (Schedules)
+  INSERT INTO maintenance_records
+    (id, equipment_id, technician_id, maintenance_type, description, cost, status, created_at)
+  SELECT
+    gen_random_uuid(),
+    ms.equipment_id,
+    COALESCE(f.contact_person, 'tech-001') AS technician_id,
+    ms.maintenance_type,
+    CONCAT('Auto-generated from schedule. Due: ', ms.next_due_date::text),
+    0.00,
+    'In Progress',
+    NOW()
+  FROM maintenance_schedules ms
+  JOIN equipment e ON e.id = ms.equipment_id
+  LEFT JOIN facilities f ON f.id = e.facility_id
+  WHERE (ms.next_due_date <= NOW() + INTERVAL '7 days' OR ms.status = 'Overdue')
+  AND NOT EXISTS (
+    SELECT 1 FROM maintenance_records mr
+    WHERE mr.equipment_id = ms.equipment_id
+      AND mr.status IN ('In Progress','Pending Verification')
+  );
+
+  -- من التنبيهات الحرجة (Alerts)
+  INSERT INTO maintenance_records
+    (id, equipment_id, technician_id, maintenance_type, description, cost, status, created_at)
+  SELECT
+    gen_random_uuid(),
+    a.equipment_id,
+    'tech-001',
+    'Corrective',
+    CONCAT('Auto-generated from critical alert: ', a.title, ' - ', a.message),
+    0.00,
+    'In Progress',
+    NOW()
+  FROM alerts a
+  WHERE a.severity = 'Critical' AND a.status = 'Open'
+  AND NOT EXISTS (
+    SELECT 1 FROM maintenance_records mr
+    WHERE mr.equipment_id = a.equipment_id
+      AND mr.status IN ('In Progress','Pending Verification')
+  );
+
+  -- تحديث حالة الأجهزة
+  UPDATE equipment
+  SET status = 'Needs Maintenance'
+  WHERE id IN (
+    SELECT ms.equipment_id FROM maintenance_schedules ms
+    WHERE (ms.next_due_date <= NOW() + INTERVAL '7 days' OR ms.status = 'Overdue')
+  )
+  AND status = 'Good';
+
+  UPDATE equipment
+  SET status = 'Not Working'
+  WHERE id IN (
+    SELECT a.equipment_id FROM alerts a
+    WHERE a.severity = 'Critical' AND a.status = 'Open'
+  )
+  AND status != 'Not Working';
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### ✅ لتشغيلها يدويًا:
+
+```sql
+SELECT auto_generate_maintenance_records(7);
+```
+
+### 🔁 لتشغيلها يوميًا تلقائيًا (في الخلفية):
+
+في السيرفر (Node.js):
+
+```js
+import cron from 'node-cron';
+import db from './db.js';
+
+cron.schedule('0 1 * * *', async () => {  // كل يوم الساعة 1 صباحًا
+  await db.query('SELECT auto_generate_maintenance_records(7);');
+  console.log('[AUTO] Maintenance records generated automatically.');
+});
+```
+
+---
+
+# 🔐 2. نظام الصلاحيات Role-Based Access Control (RBAC)
+
+الهدف:
+لكل مستخدم دور (Role) يحدد ما يمكنه فعله داخل التطبيق.
+
+### 📜 SQL Tables
+
+```sql
+-- Users table (تم تحديثه لإضافة الدور)
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  role TEXT CHECK (role IN ('Admin','Supervisor','Technician','Viewer')) DEFAULT 'Technician'
+);
+
+-- Permissions table
+CREATE TABLE IF NOT EXISTS permissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role TEXT,
+  permission TEXT
+);
+
+-- بعض الصلاحيات الأساسية
+INSERT INTO permissions (role, permission)
+VALUES
+  ('Admin', 'view_all'),
+  ('Admin', 'edit_all'),
+  ('Admin', 'approve_maintenance'),
+  ('Supervisor', 'view_all'),
+  ('Supervisor', 'approve_maintenance'),
+  ('Technician', 'view_assigned'),
+  ('Technician', 'update_tasks'),
+  ('Viewer', 'view_dashboard')
+ON CONFLICT DO NOTHING;
+```
+
+---
+
+### 🧠 مثال في الـ API
+
+```js
+async function authorize(userId, permission) {
+  const result = await db.query(`
+    SELECT 1
+    FROM permissions
+    WHERE role = (SELECT role FROM users WHERE id = $1)
+      AND permission = $2
+  `, [userId, permission]);
+  return result.rowCount > 0;
+}
+
+app.post('/maintenance-records', async (req, res) => {
+  const { userId } = req.body;
+  const allowed = await authorize(userId, 'edit_all');
+  if (!allowed)
+    return res.status(403).json({ error: 'Access denied.' });
+  // otherwise proceed
+});
+```
+
+---
+
+# 🧩 الربط بين النظامين
+
+| العملية                | يتم تنفيذها بواسطة       | صلاحية مطلوبة                |
+| ---------------------- | ------------------------ | ---------------------------- |
+| إنشاء سجل صيانة يدويًا | Admin / Technician       | `edit_all` أو `update_tasks` |
+| الأتمتة اليومية        | النظام (Background Task) | غير تفاعلية                  |
+| عرض السجلات            | Supervisor / Admin       | `view_all`                   |
+| الموافقة على الصيانة   | Supervisor / Admin       | `approve_maintenance`        |
+| عرض لوحة التحكم فقط    | Viewer                   | `view_dashboard`             |
+
+---
+
+# 🧾 **النتيجة النهائية**
+
+✅ أتمتة ذكية تنشئ سجلات الصيانة تلقائيًا
+✅ صلاحيات واضحة تحكم من يستطيع الإضافة أو العرض
+✅ جاهز للتكامل مع الـ Dashboard أو صفحة `/maintenance`
+
+---
+
+هل ترغب يا حمزة أن أجهز لك هذا كله في **ملف واحد SQL + Node.js Backend** (مثلاً `automation_and_rbac.sql` + `automation.js`)، بحيث تقدر ترفعه مباشرة في مشروعك؟
+أقدر أجهزه لك جاهز للتحميل خلال لحظات.
