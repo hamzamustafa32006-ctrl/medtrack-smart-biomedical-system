@@ -1,0 +1,358 @@
+/***************************************************************************************************
+ * MAINTENANCE RECORD FULL PATCH (DB + API + FRONTEND) — Single File for Copy & Paste
+ * Stack: PostgreSQL + Node/Express + React (shadcn/ui)، dayjs، zod
+ ***************************************************************************************************/
+
+/* ================================================================================================
+   1) SQL MIGRATION — تصلّح القيود وتوحّد القيم المسموحة وتسمح بالحقول الاختيارية
+   ضع هذا الجزء داخل migration عندك (psql أو migration tool)
+================================================================================================ */
+
+const SQL_MIGRATION = `
+-- جدول سجلات الصيانة (إن لم يكن موجودًا)
+CREATE TABLE IF NOT EXISTS maintenance_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+  maintenance_date DATE NOT NULL,
+  maintenance_type TEXT NOT NULL,
+  description TEXT,
+  performed_by TEXT,
+  next_scheduled_date DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- السماح بالأنواع المعيارية فقط
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_mrecords_type'
+  ) THEN
+    ALTER TABLE maintenance_records
+      ADD CONSTRAINT chk_mrecords_type
+      CHECK (maintenance_type IN ('Preventive','Corrective','Calibration','Inspection'));
+  END IF;
+END $$;
+
+-- السماح للحقول الاختيارية بأن تكون NULL (ليست سلسلة فارغة)
+ALTER TABLE maintenance_records
+  ALTER COLUMN description DROP NOT NULL,
+  ALTER COLUMN performed_by DROP NOT NULL,
+  ALTER COLUMN next_scheduled_date DROP NOT NULL;
+
+-- تحسينات على equipment (إن لم تكن موجودة)
+ALTER TABLE equipment
+  ADD COLUMN IF NOT EXISTS maintenance_frequency_days INT,
+  ADD COLUMN IF NOT EXISTS last_maintenance_date DATE,
+  ADD COLUMN IF NOT EXISTS next_due_date DATE,
+  ADD COLUMN IF NOT EXISTS status TEXT
+    CHECK (status IN ('Active','Pending Inspection','Under Maintenance','Decommissioned'))
+    DEFAULT 'Active';
+
+-- فهرس لتسريع جلب الأجهزة حسب الاستحقاق
+CREATE INDEX IF NOT EXISTS idx_equipment_next_due ON equipment(next_due_date)
+  WHERE status <> 'Decommissioned';
+
+-- إغلاق التنبيهات المكررة: Active alert واحد لكل جهاز
+-- (يُستخدم مع ON CONFLICT في الكود)
+`;
+
+/* ================================================================================================
+   2) SERVER/API — مسار POST /api/maintenance-records مع التحقق، حلّ التنبيهات، وتدوير المواعيد
+================================================================================================ */
+
+import express from "express";
+import { z } from "zod";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat.js";
+import pg from "pg";
+dayjs.extend(customParseFormat);
+
+const app = express();
+app.use(express.json());
+
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL, // اضبط المتغير
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
+
+// Helper: يحوّل "DD/MM/YYYY" أو "YYYY-MM-DD" إلى "YYYY-MM-DD"
+function toISODate(input?: string | null): string | null {
+  if (!input) return null;
+  const d1 = dayjs(input, "DD/MM/YYYY", true);
+  const d2 = dayjs(input, "YYYY-MM-DD", true);
+  const ok = d1.isValid() ? d1 : d2.isValid() ? d2 : null;
+  return ok ? ok.format("YYYY-MM-DD") : null;
+}
+
+// Normalizer: يحوّل "" إلى null
+const n = (v?: string | null) => (v && v.trim() !== "" ? v.trim() : null);
+
+// Validation schema
+const recordSchema = z.object({
+  equipment_id: z.string().uuid(),
+  maintenance_date: z.string(),
+  maintenance_type: z.enum(["Preventive","Corrective","Calibration","Inspection"]).default("Preventive"),
+  description: z.string().nullable().optional(),
+  performed_by: z.string().nullable().optional(),
+  next_scheduled_date: z.string().nullable().optional(),
+});
+
+// POST /api/maintenance-records
+app.post("/api/maintenance-records", async (req, res) => {
+  try {
+    // 1) تطبيع قيم الطلب
+    const body = recordSchema.parse({
+      ...req.body,
+      description: n(req.body?.description),
+      performed_by: n(req.body?.performed_by),
+      next_scheduled_date: n(req.body?.next_scheduled_date),
+    });
+
+    const maintenance_date_iso = toISODate(body.maintenance_date);
+    const next_date_iso = toISODate(body.next_scheduled_date || undefined);
+
+    if (!maintenance_date_iso)
+      return res.status(400).json({ ok:false, message: "maintenance_date must be DD/MM/YYYY or YYYY-MM-DD" });
+    if (body.next_scheduled_date && !next_date_iso)
+      return res.status(400).json({ ok:false, message: "next_scheduled_date must be DD/MM/YYYY or YYYY-MM-DD" });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // 2) إنشاء سجل الصيانة
+      const ins = await client.query(
+        `INSERT INTO maintenance_records
+          (equipment_id, maintenance_date, maintenance_type, description, performed_by, next_scheduled_date)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         RETURNING id`,
+        [
+          body.equipment_id,
+          maintenance_date_iso,
+          body.maintenance_type,
+          body.description ?? null,
+          body.performed_by ?? null,
+          next_date_iso,
+        ]
+      );
+
+      // 3) إغلاق/حلّ كل التنبيهات المفتوحة
+      await client.query(
+        `UPDATE maintenance_alerts
+         SET status='Resolved', resolved_at=NOW()
+         WHERE equipment_id=$1 AND status IN ('Open','Escalated','Acknowledged')`,
+        [body.equipment_id]
+      );
+
+      // 4) تدوير next_due_date وتحديث الحالة
+      await client.query(
+        `UPDATE equipment
+         SET last_maintenance_date = $2,
+             next_due_date = COALESCE($3,
+               CASE WHEN maintenance_frequency_days IS NOT NULL
+                    THEN (DATE $2 + (maintenance_frequency_days || ' days')::interval)
+                    ELSE next_due_date
+               END),
+             status='Active'
+         WHERE id=$1`,
+        [body.equipment_id, maintenance_date_iso, next_date_iso]
+      );
+
+      await client.query("COMMIT");
+      res.status(201).json({ ok:true, id: ins.rows[0].id });
+    } catch (e:any) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ ok:false, message: e.message });
+    } finally {
+      client.release();
+    }
+  } catch (e:any) {
+    res.status(400).json({ ok:false, message: e.message });
+  }
+});
+
+/* ================================================================================================
+   3) FRONTEND — نموذج Log Maintenance Record (React + shadcn)
+   - يحوّل التاريخ تلقائيًا
+   - يمنع السلاسل الفارغة
+   - يعرض أخطاء API بشكل واضح
+================================================================================================ */
+
+import { useState } from "react";
+// استبدل المكونات التالية بمكافئات shadcn/ui لديك
+// Input, Select, Button ...
+
+type FormState = {
+  equipmentId: string;
+  maintenanceDate: string;      // DD/MM/YYYY أو YYYY-MM-DD
+  maintenanceType: string;      // Preventive | Corrective | Calibration | Inspection
+  description?: string;
+  performedBy?: string;
+  nextDate?: string;            // اختياري
+};
+
+export function LogMaintenanceModal({ equipmentOptions, onSaved }: {
+  equipmentOptions: { id: string; name: string }[];
+  onSaved?: () => void;
+}) {
+  const [form, setForm] = useState<FormState>({
+    equipmentId: "",
+    maintenanceDate: "",
+    maintenanceType: "Preventive",
+    description: "",
+    performedBy: "",
+    nextDate: ""
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleChange = (k: keyof FormState, v: string) => setForm(s => ({ ...s, [k]: v }));
+
+  const submit = async () => {
+    setErr(null);
+    setLoading(true);
+    try {
+      const payload = {
+        equipment_id: form.equipmentId,
+        maintenance_date: form.maintenanceDate,          // سيُحوَّل في الـAPI
+        maintenance_type: form.maintenanceType,
+        description: form.description?.trim() || null,
+        performed_by: form.performedBy?.trim() || null,
+        next_scheduled_date: form.nextDate?.trim() || null
+      };
+
+      const res = await fetch("/api/maintenance-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Failed to save");
+
+      // نجاح: نظّف النموذج وحدث الـDashboard/Alerts
+      setForm({
+        equipmentId: "",
+        maintenanceDate: "",
+        maintenanceType: "Preventive",
+        description: "",
+        performedBy: "",
+        nextDate: ""
+      });
+      onSaved?.();
+    } catch (e:any) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-4 w-full max-w-md">
+      <h3 className="text-lg font-semibold mb-3">Log Maintenance Record</h3>
+
+      {/* Equipment */}
+      <label className="block text-sm mb-1">Equipment *</label>
+      <select
+        className="w-full border rounded-lg px-3 py-2 mb-3"
+        value={form.equipmentId}
+        onChange={(e)=>handleChange("equipmentId", e.target.value)}
+      >
+        <option value="">Select equipment…</option>
+        {equipmentOptions.map(opt => (
+          <option key={opt.id} value={opt.id}>{opt.name}</option>
+        ))}
+      </select>
+
+      {/* Maintenance Date */}
+      <label className="block text-sm mb-1">Maintenance Date *</label>
+      <input
+        type="text"
+        placeholder="DD/MM/YYYY or YYYY-MM-DD"
+        className="w-full border rounded-lg px-3 py-2 mb-3"
+        value={form.maintenanceDate}
+        onChange={(e)=>handleChange("maintenanceDate", e.target.value)}
+      />
+
+      {/* Type */}
+      <label className="block text-sm mb-1">Maintenance Type</label>
+      <select
+        className="w-full border rounded-lg px-3 py-2 mb-3"
+        value={form.maintenanceType}
+        onChange={(e)=>handleChange("maintenanceType", e.target.value)}
+      >
+        <option>Preventive</option>
+        <option>Corrective</option>
+        <option>Calibration</option>
+        <option>Inspection</option>
+      </select>
+
+      {/* Description */}
+      <label className="block text-sm mb-1">Description</label>
+      <textarea
+        className="w-full border rounded-lg px-3 py-2 mb-3"
+        placeholder="What was done?"
+        value={form.description}
+        onChange={(e)=>handleChange("description", e.target.value)}
+      />
+
+      {/* Performed By */}
+      <label className="block text-sm mb-1">Performed By</label>
+      <input
+        type="text"
+        className="w-full border rounded-lg px-3 py-2 mb-3"
+        placeholder="Technician name"
+        value={form.performedBy}
+        onChange={(e)=>handleChange("performedBy", e.target.value)}
+      />
+
+      {/* Next Scheduled Date */}
+      <label className="block text-sm mb-1">Next Scheduled Date (optional)</label>
+      <input
+        type="text"
+        placeholder="DD/MM/YYYY or YYYY-MM-DD"
+        className="w-full border rounded-lg px-3 py-2 mb-4"
+        value={form.nextDate}
+        onChange={(e)=>handleChange("nextDate", e.target.value)}
+      />
+
+      {err && <p className="text-red-600 text-sm mb-2">{err}</p>}
+
+      <button
+        className={`w-full rounded-lg px-4 py-2 text-white ${loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
+        disabled={loading}
+        onClick={submit}
+      >
+        {loading ? "Saving…" : "Save"}
+      </button>
+    </div>
+  );
+}
+
+/* ================================================================================================
+   4) OPTIONAL: تطبيق المايجريشن مباشرة من هذا الملف (للتجارب المحلية)
+================================================================================================ */
+
+async function applyMigration() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(SQL_MIGRATION);
+    await client.query("COMMIT");
+    console.log("Migration applied ✅");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("Migration failed:", (e as Error).message);
+  } finally {
+    client.release();
+  }
+}
+
+// شغّل السيرفر (اختياري)
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`API running on :${PORT}`));
+  // applyMigration(); // فك التعليق لتطبيق المايجريشن محليًا
+}
