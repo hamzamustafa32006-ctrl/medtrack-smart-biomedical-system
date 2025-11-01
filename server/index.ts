@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import cron from "node-cron";
 import { generateMaintenanceAlerts } from "./alertService";
 import { updateScheduleStatuses } from "./scheduleService";
+import { updateContractStatuses } from "./contractService";
 
 const app = express();
 
@@ -52,7 +53,7 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Setup daily maintenance alert generation and schedule status update scheduler
+  // Setup daily maintenance alert generation, schedule status updates, and contract expiry detection
   // Runs every day at midnight (Kuwait timezone: Asia/Kuwait UTC+3)
   cron.schedule('0 0 * * *', async () => {
     try {
@@ -73,6 +74,15 @@ app.use((req, res, next) => {
       if (scheduleResult.errors.length > 0) {
         console.error('[SCHEDULER] Schedule update errors:', scheduleResult.errors);
       }
+      
+      // Update contract expiry statuses
+      log('[SCHEDULER] Starting contract expiry detection...');
+      const contractResult = await updateContractStatuses();
+      log(`[SCHEDULER] Contract update complete: ${contractResult.expired} expired, ${contractResult.pendingRenewal} pending renewal, ${contractResult.alertsCreated} alerts created${contractResult.errors.length > 0 ? `, ${contractResult.errors.length} errors` : ''}`);
+      
+      if (contractResult.errors.length > 0) {
+        console.error('[SCHEDULER] Contract update errors:', contractResult.errors);
+      }
     } catch (error) {
       console.error('[SCHEDULER] Daily scheduler failed:', error);
     }
@@ -80,7 +90,7 @@ app.use((req, res, next) => {
     timezone: "Asia/Kuwait" // Run in Kuwait timezone
   });
 
-  log('[SCHEDULER] Daily maintenance scheduler initialized (alerts & schedule updates at midnight Kuwait time)');
+  log('[SCHEDULER] Daily maintenance scheduler initialized (equipment alerts, schedule updates & contract expiry at midnight Kuwait time)');
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

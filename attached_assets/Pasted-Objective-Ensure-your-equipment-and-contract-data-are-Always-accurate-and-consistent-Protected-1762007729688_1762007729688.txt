@@ -1,0 +1,150 @@
+Objective
+Ensure your equipment and contract data are:
+✅ Always accurate and consistent
+🧩 Protected against duplication or deletion errors
+🧠 Automatically validated and synced with maintenance schedules
+🔄 Fault-tolerant (e.g., safe recovery from API or user errors)
+🧱 2. Database-Level Reliability Improvements
+✅ A. Strengthen Data Integrity with Constraints & Defaults
+Equipment Table
+ALTER TABLE equipment
+ADD CONSTRAINT equipment_unique UNIQUE (serial_number, manufacturer),
+ADD CONSTRAINT chk_dates CHECK (next_due_date >= last_maintenance_date),
+ALTER COLUMN manufacturer SET NOT NULL,
+ALTER COLUMN name SET NOT NULL,
+ALTER COLUMN status SET DEFAULT 'Active';
+💡 Prevents duplicate serials, enforces valid date logic, and guarantees all equipment records have complete basic info.
+Contracts Table
+CREATE TABLE contracts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_number TEXT UNIQUE NOT NULL,
+  vendor_id UUID REFERENCES vendors(id),
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  contract_type TEXT CHECK (contract_type IN ('Service','Warranty','Calibration')),
+  status TEXT CHECK (status IN ('Active','Expired','Pending Renewal')) DEFAULT 'Active',
+  auto_renew BOOLEAN DEFAULT FALSE,
+  notes TEXT
+);
+Automatic expiry enforcement:
+UPDATE contracts
+SET status = 'Expired'
+WHERE end_date < CURRENT_DATE AND status != 'Expired';
+✅ B. Add Foreign Key Cascades & Safe Deletes
+ALTER TABLE maintenance_schedules
+ADD CONSTRAINT fk_schedule_equipment FOREIGN KEY (equipment_id)
+REFERENCES equipment(id) ON DELETE CASCADE;
+💡 If equipment is removed, all related schedules and alerts are automatically cleaned — no orphaned data.
+✅ C. Enforce Versioning for Audit Trail
+Track every change to critical data (equipment, contracts, vendors).
+CREATE TABLE data_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type TEXT,
+  entity_id UUID,
+  action TEXT,
+  changed_by UUID REFERENCES users(id),
+  old_data JSONB,
+  new_data JSONB,
+  changed_at TIMESTAMP DEFAULT NOW()
+);
+Implement via triggers:
+CREATE OR REPLACE FUNCTION log_equipment_update()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO data_audit_log (entity_type, entity_id, action, old_data, new_data)
+  VALUES ('equipment', NEW.id, TG_OP, row_to_json(OLD), row_to_json(NEW));
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER equipment_audit_trigger
+AFTER UPDATE ON equipment
+FOR EACH ROW EXECUTE FUNCTION log_equipment_update();
+✅ Provides a complete history for compliance and accountability.
+🧩 3. Backend Reliability Enhancements
+✅ A. Data Validation Middleware (Node.js / Express Example)
+Before writing to DB, validate payloads using Zod or Joi.
+import { z } from 'zod';
+
+const equipmentSchema = z.object({
+  name: z.string().min(2),
+  serial_number: z.string().min(3),
+  manufacturer: z.string(),
+  facility_id: z.string().uuid(),
+  next_due_date: z.string().refine(d => new Date(d) > new Date(), "Next due date must be in future"),
+});
+
+app.post('/equipment', async (req, res, next) => {
+  try {
+    equipmentSchema.parse(req.body);
+    await db.query('INSERT INTO equipment ...');
+    res.status(201).send({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+✅ Ensures no incomplete or invalid data enters your database.
+✅ B. Automatic Contract & Equipment Sync Job
+Runs daily to:
+Update expired contracts
+Update linked equipment contract status
+cron.schedule('0 3 * * *', async () => {
+  await db.query(`
+    UPDATE contracts SET status='Expired'
+    WHERE end_date < CURRENT_DATE AND status!='Expired';
+  `);
+
+  await db.query(`
+    UPDATE equipment e
+    SET status = 'Pending Inspection'
+    FROM contracts c
+    WHERE e.vendor_name = c.vendor_id::text AND c.status='Expired';
+  `);
+});
+💡 If a service contract expires, linked equipment automatically changes to “Pending Inspection.”
+✅ C. Redundancy Detection Script
+Scan for duplicates by serial or model:
+SELECT name, manufacturer, COUNT(*) 
+FROM equipment 
+GROUP BY name, manufacturer 
+HAVING COUNT(*) > 1;
+Automatically merge duplicates (optional) via admin review flow.
+✅ D. Graceful API Error Handling
+All DB transactions wrapped in rollback-safe logic:
+try {
+  await db.query('BEGIN');
+  await db.query('UPDATE equipment SET ...');
+  await db.query('INSERT INTO maintenance_schedules ...');
+  await db.query('COMMIT');
+} catch (err) {
+  await db.query('ROLLBACK');
+  console.error('Transaction failed:', err);
+}
+✅ Prevents partial updates that might leave your schedules desynced.
+🧠 4. Reliability via Monitoring & Alerts
+✅ A. Data Consistency Health Checks
+Add nightly integrity reports:
+SELECT COUNT(*) FROM equipment WHERE next_due_date IS NULL;
+SELECT COUNT(*) FROM contracts WHERE end_date < start_date;
+Send summary to admin email or dashboard widget.
+✅ B. Analytics Dashboard Integration
+Expose data reliability metrics:
+Metric	Description
+🔒 Valid Equipment Records	% of records passing validation
+📄 Expired Contracts	Number of expired vendor/service contracts
+⚙️ Synced Maintenance Items	Equipment linked to active maintenance schedules
+⚠️ Duplicate Equipment	Found duplicates by serial
+🎨 5. Frontend UX Enhancements for Data Reliability
+Feature	Description
+🧰 Validation feedback	Inline form checks when adding/editing equipment (red borders, tooltips).
+🧾 Contract countdown badges	“Expires in 12 days” next to vendor info on equipment card.
+🔄 Linked record indicators	“Linked schedule: Preventive (Due Nov 6)” in equipment drawer.
+⚠️ Error toast	Clear UI message if saving fails due to validation.
+📊 Data integrity card	Dashboard widget showing “98% valid records”.
+🧩 6. Implementation Plan
+Step	Focus	Outcome
+1️⃣	Add SQL constraints + audit triggers	Protects core data from corruption
+2️⃣	Implement backend validation + rollback safety	Ensures clean API writes
+3️⃣	Add contract-equipment sync job	Keeps status aligned with contracts
+4️⃣	Integrate reliability metrics into analytics dashboard	Visibility into data health
+5️⃣	Frontend validation & contract indicators	Prevents bad input and confusion

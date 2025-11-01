@@ -5,7 +5,9 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import {
   insertEquipmentSchema,
+  insertEquipmentSchemaBase,
   insertContractSchema,
+  insertContractSchemaBase,
   insertMaintenanceRecordSchema,
   insertFacilitySchema,
   insertLocationSchema,
@@ -157,7 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const { id } = req.params;
-      const data = insertEquipmentSchema.partial().parse(req.body);
+      const data = insertEquipmentSchemaBase.partial().parse(req.body);
       const equipment = await storage.updateEquipment(id, data, userId);
       
       if (!equipment) {

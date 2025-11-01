@@ -22,16 +22,16 @@ import { formatDate } from "@/lib/dateUtils";
 import { QRCodeSVG } from "qrcode.react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import type { Equipment, Contract, Facility, EquipmentStatus, EquipmentCriticality, MaintenanceRecord } from "@shared/schema";
-import { insertEquipmentSchema, insertContractSchema, type InsertEquipment, type InsertContract } from "@shared/schema";
+import { insertEquipmentSchemaBase, insertContractSchemaBase, type InsertEquipment, type InsertContract } from "@shared/schema";
 import { z } from "zod";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
-const equipmentFormSchema = insertEquipmentSchema.extend({
+const equipmentFormSchema = insertEquipmentSchemaBase.extend({
   maintenanceFrequencyDays: z.coerce.number().int().positive().optional().nullable(),
   lastMaintenanceDate: z.string().optional().nullable(),
 });
 
-const contractFormSchema = insertContractSchema.extend({
+const contractFormSchema = insertContractSchemaBase.extend({
   startDate: z.string(),
   endDate: z.string(),
   alertThresholdDays: z.coerce.number().int().positive().default(30),
@@ -145,11 +145,14 @@ export default function EquipmentPage() {
     resolver: zodResolver(contractFormSchema),
     defaultValues: {
       equipmentId: "",
+      contractNumber: "",
       vendorName: "",
       vendorContact: "",
       startDate: "",
       endDate: "",
-      contractType: "",
+      contractType: "Service",
+      status: "Active",
+      autoRenew: false,
       notes: "",
       alertThresholdDays: 30,
     },

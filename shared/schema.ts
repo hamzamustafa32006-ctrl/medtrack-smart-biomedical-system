@@ -220,6 +220,8 @@ export const equipment = pgTable("equipment", {
   index("equipment_facility_idx").on(table.facilityId),
   index("equipment_vendor_idx").on(table.vendorId),
   index("equipment_status_idx").on(table.status),
+  // Unique constraint: serial number must be unique per user (prevent duplicates)
+  index("equipment_serial_unique_idx").on(table.userId, table.serial).where(sql`serial IS NOT NULL`),
 ]);
 
 export const equipmentRelations = relations(equipment, ({ one, many }) => ({
@@ -246,7 +248,8 @@ export const equipmentRelations = relations(equipment, ({ one, many }) => ({
   maintenanceSchedules: many(maintenanceSchedules),
 }));
 
-export const insertEquipmentSchema = createInsertSchema(equipment).omit({
+// Base schema without refinements for use with .partial()
+export const insertEquipmentSchemaBase = createInsertSchema(equipment).omit({
   id: true,
   userId: true,
   createdAt: true,
@@ -255,7 +258,25 @@ export const insertEquipmentSchema = createInsertSchema(equipment).omit({
   status: equipmentStatusEnum.optional(),
   criticality: equipmentCriticalityEnum.optional(),
   condition: equipmentConditionEnum.optional(),
+  // Enhanced validation rules for data reliability
+  name: z.string().min(2, "Equipment name must be at least 2 characters"),
+  manufacturer: z.string().min(2, "Manufacturer is required").optional(),
+  serial: z.string().min(3, "Serial number must be at least 3 characters").optional(),
 });
+
+// Full insert schema with date validation
+export const insertEquipmentSchema = insertEquipmentSchemaBase.refine(
+  (data) => {
+    if (data.lastMaintenanceDate && data.nextDueDate) {
+      return new Date(data.nextDueDate) >= new Date(data.lastMaintenanceDate);
+    }
+    return true;
+  },
+  {
+    message: "Next due date must be after or equal to last maintenance date",
+    path: ["nextDueDate"],
+  }
+);
 
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
 export type Equipment = typeof equipment.$inferSelect;
@@ -263,6 +284,14 @@ export type Equipment = typeof equipment.$inferSelect;
 // ============================================
 // Contracts Table
 // ============================================
+
+// Contract type enum
+export const contractTypeEnum = z.enum(["Service", "Warranty", "Calibration", "Maintenance"]);
+export type ContractType = z.infer<typeof contractTypeEnum>;
+
+// Contract status enum
+export const contractStatusEnum = z.enum(["Active", "Expired", "Pending Renewal"]);
+export type ContractStatus = z.infer<typeof contractStatusEnum>;
 
 export const contracts = pgTable("contracts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -272,16 +301,25 @@ export const contracts = pgTable("contracts", {
   equipmentId: varchar("equipment_id")
     .notNull()
     .references(() => equipment.id, { onDelete: "cascade" }),
+  contractNumber: varchar("contract_number", { length: 100 }), // Unique contract identifier
   vendorName: varchar("vendor_name", { length: 255 }).notNull(),
   vendorContact: varchar("vendor_contact", { length: 255 }),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
-  contractType: varchar("contract_type", { length: 100 }), // e.g., "Maintenance", "Warranty", "Service"
+  contractType: varchar("contract_type", { length: 100 }).default("Service"), // Service, Warranty, Calibration, Maintenance
+  status: varchar("status", { length: 50 }).notNull().default("Active"), // Active, Expired, Pending Renewal
+  autoRenew: boolean("auto_renew").default(false), // Automatic renewal flag
   notes: text("notes"),
   alertThresholdDays: integer("alert_threshold_days").notNull().default(30), // Alert X days before expiry
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  // Unique constraint: contract number must be unique per user (if provided)
+  index("contracts_number_unique_idx").on(table.userId, table.contractNumber).where(sql`contract_number IS NOT NULL`),
+  index("contracts_user_idx").on(table.userId),
+  index("contracts_equipment_idx").on(table.equipmentId),
+  index("contracts_status_idx").on(table.status),
+]);
 
 export const contractsRelations = relations(contracts, ({ one }) => ({
   user: one(users, {
@@ -294,12 +332,32 @@ export const contractsRelations = relations(contracts, ({ one }) => ({
   }),
 }));
 
-export const insertContractSchema = createInsertSchema(contracts).omit({
+// Base schema without refinements for use with .partial()
+export const insertContractSchemaBase = createInsertSchema(contracts).omit({
   id: true,
   userId: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  contractType: contractTypeEnum.optional(),
+  status: contractStatusEnum.optional(),
+  vendorName: z.string().min(2, "Vendor name is required"),
+  contractNumber: z.string().min(3, "Contract number must be at least 3 characters").optional(),
 });
+
+// Full insert schema with date validation
+export const insertContractSchema = insertContractSchemaBase.refine(
+  (data) => {
+    if (data.startDate && data.endDate) {
+      return new Date(data.endDate) > new Date(data.startDate);
+    }
+    return true;
+  },
+  {
+    message: "End date must be after start date",
+    path: ["endDate"],
+  }
+);
 
 export type InsertContract = z.infer<typeof insertContractSchema>;
 export type Contract = typeof contracts.$inferSelect;
